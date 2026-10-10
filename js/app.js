@@ -115,6 +115,20 @@ function makeBoard(game, pid) {
   };
 }
 
+const HAND_SIZE = 9;
+/** Items already in play in an empty-board game (on the board, in any hand, or waiting to be placed). */
+const placeUsed = (g) => [
+  ...(g.items || []).filter(Boolean), ...Object.values(g.hands || {}).flat(), ...Object.values(g.pending || {}).map((p) => p.item),
+].map((it) => it.text);
+/** n fresh random items for a hand, honoring the game's item mix and stars. */
+function drawHand(g, n, extraExclude = []) {
+  const skip = new Set([...placeUsed(g), ...extraExclude]);
+  const pool = poolFor(g).filter((it) => !skip.has(it.text));
+  const out = [];
+  while (out.length < n && pool.length) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  return out.map(({ tier, icon, text, cat }) => ({ tier, icon, text, cat }));
+}
+
 function versusBackups(game) {
   return G.generateCard({ size: game.size, difficulty: game.difficulty, exclude: game.items.map((i) => i.text), pool: poolFor(game), backups: backupCount(game) }).backups;
 }
@@ -160,6 +174,12 @@ async function createGame(settings, createdBy) {
     };
     store.put('games', code, game).catch(fail);
     for (const pid of game.players) store.put('boards', `${code}_${pid}`, makeBoard(game, pid)).catch(fail);
+  } else if (settings.place) {
+    // Empty board: everyone gets a hand of items; snap one, then place it on any empty square.
+    const game = { ...base, coop: !!settings.coop, connect: settings.connect, place: true,
+      items: Array(settings.size * settings.size).fill(null), claims: {}, hands: {}, pending: {} };
+    for (const pid of game.players) game.hands[pid] = drawHand(game, HAND_SIZE);
+    store.put('games', code, game).catch(fail);
   } else {
     const card = G.generateCard({ size: settings.size, difficulty: settings.difficulty, pool: poolFor(settings), backups: backupCount(settings) });
     const game = { ...base, coop: !!settings.coop, connect: settings.connect, items: card.items, claims: {}, backups: {} };
@@ -197,7 +217,7 @@ async function confirmDelete(code) {
 const settingsFrom = (g) => ({
   mode: g.mode, size: g.size, difficulty: g.difficulty, players: g.players,
   winRule: g.winRule, minutes: g.minutes || 60, freeCenter: g.freeCenter, sameCard: g.sameCard, connect: g.connect, coop: !!g.coop, mix: mixOf(g), tier: g.lastPick?.tier, tiers: g.tiers,
-  backupCount: g.mode === 'endless' ? undefined : backupCount(g), noSwaps: !!g.noSwaps,
+  backupCount: g.mode === 'endless' ? undefined : backupCount(g), noSwaps: !!g.noSwaps, place: !!g.place,
   slots: g.mode === 'endless' ? G.endlessState(g).slots : undefined, turnMode: g.mode === 'endless' ? G.endlessState(g).turnMode : undefined,
 });
 
@@ -387,6 +407,7 @@ function HowToPlay() {
   return html`<ul class="how-list">
     <li><b>Solo Series:</b> everyone gets their own board. Tap a square, take a photo, and it's marked. Pick a win rule when you start.</li>
     <li><b>Crossover:</b> everyone shares one board. Snap a square first to claim it with your emblem and get N in a row to win. Or pick <b>Co-op</b> and black out the board together.</li>
+    <li><b>Empty board</b> (Crossover option): the board starts blank and everyone gets a hand of ${HAND_SIZE} items. Snap one, then place it on any empty square. Pick your spots to block or build a line.</li>
     <li><b>Endless:</b> 1–3 items are up at a time. Snap one to score (★ = 1 pt, ★★ = 2, ★★★ = 3), then pick the difficulty and type of the next item. An item that sits while 2 others get found swaps itself out.</li>
     <li><b>Backups:</b> in Solo Series and Crossover you get 1–3 backup items. Tap a backup, then tap an unmarked square to swap it in.</li>
     <li><b>🎲 Swap:</b> tap an item you haven't found to see 3 others with the same stars. Pick one to swap it in (swaps count as rerolls in the stats).</li>
@@ -445,6 +466,7 @@ function NewGame({ mode, me, players }) {
   const [tiers, setTiers] = useState(ALL_TIERS);
   const [backups, setBackups] = useState(null); // null = follow the board size
   const [swaps, setSwaps] = useState(true);
+  const [place, setPlace] = useState(false);
   const toggleTier = (t) => setTiers((ts) => (ts.includes(t) ? (ts.length > 1 ? ts.filter((x) => x !== t) : ts) : ALL_TIERS.filter((x) => x === t || ts.includes(x))));
   const [selected, setSelected] = useState([me.id]);
   const [busy, setBusy] = useState(false);
@@ -460,7 +482,7 @@ function NewGame({ mode, me, players }) {
     setBusy(true);
     try {
       const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, mix, tier, slots, turnMode, tiers: isEndless ? null : tiers,
-        backupCount: nb, noSwaps: !swaps, players: selected }, me.id);
+        backupCount: nb, noSwaps: !swaps, place: !isBingo && !isEndless && place, players: selected }, me.id);
       go(`/g/${code}`);
     } catch (e) {
       toast(`Couldn't create game: ${e.message}`, 'error');
@@ -525,6 +547,9 @@ function NewGame({ mode, me, players }) {
             <label class="toggle"><input type="checkbox" checked=${freeCenter} onChange=${(e) => setFreeCenter(e.target.checked)} />
               <span>Free center square</span></label>`}
         ` : html`
+          <h2>Board</h2>
+          <${Choice} value=${place} onChange=${setPlace}
+            options=${[[false, 'Filled', 'Items start on the board'], [true, 'Empty', `Snap from your hand of ${HAND_SIZE}, then place it`]]} />
           <h2>Game style</h2>
           <${Choice} value=${coop} onChange=${setCoop}
             options=${[[false, 'Race', 'Claim squares, first to get N in a row wins'], [true, 'Co-op', 'Team up and black out the whole board together']]} />
@@ -534,9 +559,10 @@ function NewGame({ mode, me, players }) {
               options=${Array.from({ length: size - 2 }, (_, i) => i + 3).map((k) => [k, `${k} in a row`])} />`}
         `}
 
-        <h2>Backups</h2>
-        <${Choice} value=${nb} onChange=${setBackups} options=${[0, 1, 2, 3, 4, 5].map((k) => [k, String(k)])} />
-        <p class="muted small">${nb ? `Each player gets ${nb} backup item${nb === 1 ? '' : 's'} to swap onto their board.` : 'No backup items this game.'}</p>
+        ${!(place && !isBingo) && html`
+          <h2>Backups</h2>
+          <${Choice} value=${nb} onChange=${setBackups} options=${[0, 1, 2, 3, 4, 5].map((k) => [k, String(k)])} />
+          <p class="muted small">${nb ? `Each player gets ${nb} backup item${nb === 1 ? '' : 's'} to swap onto their board.` : 'No backup items this game.'}</p>`}
 
         <${SwapsToggle} swaps=${swaps} setSwaps=${setSwaps} />
       </section>`}
@@ -578,7 +604,7 @@ const TRASH_SVG = html`<svg viewBox="0 0 24 24" width="20" height="20" fill="non
   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg>`;
 
 const gameDetail = (g) => g.mode === 'endless' ? `${findCount(g)} find${findCount(g) === 1 ? '' : 's'}`
-  : `${g.size}×${g.size} · ${g.mode === 'bingo' ? G.WIN_RULES[g.winRule]?.label : g.coop ? 'Team blackout' : `${g.connect} in a row`}`;
+  : `${g.size}×${g.size}${g.place ? ' · Empty board' : ''} · ${g.mode === 'bingo' ? G.WIN_RULES[g.winRule]?.label : g.coop ? 'Team blackout' : `${g.connect} in a row`}`;
 const gameResult = (g, playersById) => {
   const w = g.winner && playersById[g.winner];
   return w ? `🏆 ${w.name}` : g.winner === 'draw' ? '🤝 Draw' : g.winner === 'team' ? '🎉 Blacked out' : 'In progress';
@@ -1382,7 +1408,8 @@ function GameScreen({ code, me, playersById }) {
       const res = await store.transact('games', code, (g) => {
         if (!g || g.players.includes(me.id)) return undefined;
         g.players.push(me.id);
-        if (g.mode === 'versus') g.backups = { ...g.backups, [me.id]: versusBackups(g) };
+        if (g.mode === 'versus' && g.place) g.hands = { ...g.hands, [me.id]: drawHand(g, HAND_SIZE) };
+        else if (g.mode === 'versus') g.backups = { ...g.backups, [me.id]: versusBackups(g) };
         return g;
       });
       if (game.mode === 'bingo') {
@@ -1409,7 +1436,7 @@ function GameScreen({ code, me, playersById }) {
     } catch {}
   };
 
-  const Screen = game.mode === 'bingo' ? BingoGame : game.mode === 'endless' ? EndlessGame : VersusGame;
+  const Screen = game.mode === 'bingo' ? BingoGame : game.mode === 'endless' ? EndlessGame : game.place ? PlaceGame : VersusGame;
   return html`
     <main class="screen game">
       <nav class="topbar">
@@ -1779,6 +1806,159 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       onBlock=${isPlayer && !over && !openClaim ? block : null}
       note=${!openClaim && over ? 'Game over.' : !openClaim && !isPlayer ? `Join the game to ${coop ? 'help out' : 'claim squares'}.` : null}
       onClose=${() => setOpen(null)} />`}
+  `;
+}
+
+// ───────────────────────── crossover: empty board ─────────────────────────
+
+const EMPTY_ITEM = { icon: '', text: '', cat: 'empty', tier: 'free' };
+
+function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
+  const [open, setOpen] = useState(null); // board square being viewed
+  const [handIdx, setHandIdx] = useState(null); // hand card being snapped
+  const celebrate = useCelebrate(game.winner);
+
+  const coop = !!game.coop;
+  const total = game.size * game.size;
+  const counts = G.versusCounts(game);
+  const placed = Object.keys(game.claims || {}).length;
+  const over = !!game.winner;
+  const winLine = !coop && game.winner && game.winner !== 'draw' ? G.versusWinLine(game, game.winner) : null;
+  const winCells = new Set(winLine || []);
+  const hand = game.hands?.[me.id] || [];
+  const pending = game.pending?.[me.id];
+  const name = (pid) => (pid === me.id ? 'You' : firstName(playersById[pid]));
+
+  const tx = (fn) => store.transact('games', game.code, (g) => (!g || g.winner ? undefined : fn(g) === false ? undefined : g));
+
+  // 1) Snap a card from your hand: it waits as "pending" until you place it. The hand refills right away.
+  const snap = async (idx, file) => {
+    const card = hand[idx];
+    const photo = file ? await uploadPhoto(file, game.code, me.id) : null;
+    const res = await tx((g) => {
+      const h = (g.hands?.[me.id] || []).slice();
+      if (g.pending?.[me.id] || h[idx]?.text !== card.text) return false;
+      h.splice(idx, 1);
+      g.pending = { ...g.pending, [me.id]: { item: card, photo, at: Date.now() } };
+      g.hands = { ...g.hands, [me.id]: [...h, ...drawHand(g, HAND_SIZE - h.length)] };
+    });
+    setHandIdx(null);
+    if (!res.ok) toast('Place your last find before snapping another.', 'error');
+    else toast('Got it! Now tap an empty square to place it.', 'good');
+  };
+
+  // 2) Place the pending find on an empty square.
+  const placeAt = async (i) => {
+    const res = await tx((g) => {
+      const p = g.pending?.[me.id];
+      if (!p || g.items[i] || g.claims?.[i]) return false;
+      g.items[i] = p.item;
+      g.claims = { ...g.claims, [i]: { by: me.id, photo: p.photo, at: Date.now() } };
+      const pend = { ...g.pending }; delete pend[me.id]; g.pending = pend;
+      const full = Object.keys(g.claims).length === g.size * g.size;
+      if (g.coop) { if (full) g.winner = 'team'; }
+      else if (G.versusWinLine(g, me.id)) g.winner = me.id;
+      else if (full) {
+        const c = G.versusCounts(g);
+        const best = Math.max(...Object.values(c));
+        const leaders = Object.keys(c).filter((k) => c[k] === best);
+        g.winner = leaders.length === 1 ? leaders[0] : 'draw';
+      }
+      if (g.winner) g.wonAt = Date.now();
+    }).catch((e) => { toast(`Placing needs a connection: ${e.message}`, 'error'); return null; });
+    if (res && !res.ok) toast('Someone just took that square. Pick another.', 'error');
+  };
+
+  // Changed your mind: the find goes back into your hand.
+  const unpend = async () => {
+    await tx((g) => {
+      const p = g.pending?.[me.id];
+      if (!p) return false;
+      g.hands = { ...g.hands, [me.id]: [p.item, ...(g.hands?.[me.id] || []).slice(0, HAND_SIZE - 1)] };
+      const pend = { ...g.pending }; delete pend[me.id]; g.pending = pend;
+    });
+  };
+
+  const swapCard = async (idx, choice, counted) => {
+    const card = hand[idx];
+    await tx((g) => {
+      const h = (g.hands?.[me.id] || []).slice();
+      if (h[idx]?.text !== card.text) return false;
+      const it = choice && !placeUsed(g).includes(choice.text) ? choice : drawHand(g, 1, [card.text])[0];
+      if (!it) return false;
+      h[idx] = it;
+      g.hands = { ...g.hands, [me.id]: h };
+      if (counted) g.rerolls = { ...g.rerolls, [me.id]: (g.rerolls?.[me.id] || 0) + 1 };
+    }).catch((e) => toast(`Swapping needs a connection: ${e.message}`, 'error'));
+  };
+
+  const tapSquare = (i) => {
+    if (game.claims?.[i]) return setOpen(i);
+    if (over || !isPlayer) return;
+    if (pending) return placeAt(i);
+    toast('Snap something from your hand first, then place it here.');
+  };
+
+  const winner = game.winner && game.winner !== 'draw' && game.winner !== 'team' ? playersById[game.winner] : null;
+  const openClaim = open !== null ? game.claims?.[open] : null;
+  const card = handIdx !== null ? hand[handIdx] : null;
+
+  return html`
+    ${celebrate && html`<${Confetti} />`}
+    <div class="game-info"><span>${game.size}×${game.size} · Empty board · ${coop ? 'Co-op: fill the board' : `${game.connect} in a row wins`}${mixTag(game)}${tiersTag(game)}</span></div>
+    ${over && html`<${WinBanner}
+      text=${game.winner === 'team' ? 'TEAM BLACKOUT!' : game.winner === 'draw' ? "IT'S A DRAW!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
+      sub=${coop ? `All ${total} squares filled together. 🎉` : !winLine && game.winner !== 'draw' ? 'Board full: most squares wins.' : null}
+      onRematch=${onRematch} />`}
+    ${coop && html`<div class="team-progress">
+      <div class="bar"><span style=${`width:${(placed / total) * 100}%`}></span></div>
+      <b>${placed} / ${total} placed</b>
+    </div>`}
+    <div class="scoreboard">
+      ${game.players.map((pid) => {
+        const p = playersById[pid];
+        return html`<div class="score versus" key=${pid} style=${`--claim:${playerColor(p)}`}>
+          <${Emblem} id=${p?.emblem} size=${34} />
+          <span class="nm">${name(pid)}${game.winner === pid ? ' 🏆' : ''}</span>
+          <span class="pts">${counts[pid] || 0} placed${game.pending?.[pid] ? ' · 📸 1 ready' : ''}</span>
+        </div>`;
+      })}
+    </div>
+
+    ${pending && !over && html`<div class="banner place-banner">
+      <span class="grow">📍 Tap an empty square to place <b>${pending.item.text}</b></span>
+      <button class="btn small ghost" onClick=${unpend}>Put back</button>
+    </div>`}
+
+    <${Board} size=${game.size}>
+      ${game.items.map((item, i) => {
+        const c = game.claims?.[i];
+        if (!item || !c) return html`<button class=${'tile empty' + (pending && !over ? ' swap-target' : '')} key=${i} onClick=${() => tapSquare(i)}
+          aria-label="Empty square"><span class="plus">${pending && !over ? '📍' : '+'}</span></button>`;
+        const p = playersById[c.by];
+        return html`<${Tile} key=${i} item=${item} thumb=${c.photo && (thumbs[c.photo]?.thumb || PLACEHOLDER)} found=${true}
+          stamp=${p?.emblem} claimColor=${p && playerColor(p)} win=${winCells.has(i)} onClick=${() => tapSquare(i)} />`;
+      })}
+    <//>
+
+    ${isPlayer && !over && html`<section class="hand">
+      <h3>Your hand <small>${pending ? '· place your find first' : '· tap one to snap it'}</small></h3>
+      <div class="hand-grid">
+        ${hand.map((it, idx) => html`<button class=${`hand-card cat-${it.cat}`} key=${it.text} disabled=${!!pending} onClick=${() => setHandIdx(idx)}>
+          <span class="icon">${it.icon}</span><span class="txt">${it.text}</span><span class="stars">${TIER_STARS[it.tier]}</span>
+        </button>`)}
+      </div>
+    </section>`}
+
+    ${card && html`<${SquareModal} item=${card} found=${false} canAct=${!pending && !over} actionLabel="Snap it"
+      onFile=${(f) => snap(handIdx, f)} onNoPhoto=${() => snap(handIdx, null)}
+      getAlts=${() => G.rerollOptions(card, { exclude: placeUsed(game), pool: poolFor(game) })}
+      onReroll=${game.noSwaps ? null : (it) => swapCard(handIdx, it, true)} rerolls=${game.rerolls?.[me.id] || 0}
+      onBlock=${() => { blockItem(card.text); swapCard(handIdx, null, false); setHandIdx(null); }}
+      onClose=${() => setHandIdx(null)} />`}
+    ${openClaim && html`<${SquareModal} item=${game.items[open]} photoId=${openClaim.photo} found=${true}
+      thumb=${openClaim.photo && thumbs[openClaim.photo]?.thumb} by=${playersById[openClaim.by]} at=${openClaim.at}
+      canAct=${false} onClose=${() => setOpen(null)} />`}
   `;
 }
 
