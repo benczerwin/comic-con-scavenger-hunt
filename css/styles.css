@@ -197,6 +197,9 @@ a { color: inherit; }
 .timer { font-family: var(--display); font-size: 1.3rem; background: var(--ink); color: var(--yellow); padding: 2px 10px; border-radius: 8px; }
 .timer.over { background: var(--red); color: #fff; }
 
+.team-progress { display: flex; align-items: center; gap: 10px; margin: 0 2px 10px; font-weight: 800; }
+.team-progress .bar { flex: 1; height: 16px; border: 3px solid var(--ink); border-radius: 999px; background: #fff; overflow: hidden; }
+.team-progress .bar span { display: block; height: 100%; background: var(--yellow); transition: width 0.4s; }
 .scoreboard { display: flex; gap: 8px; overflow-x: auto; padding: 2px 4px 8px 2px; margin-bottom: 8px; scrollbar-width: none; }
 .score {
   flex: none; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 8px;

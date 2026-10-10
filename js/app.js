@@ -114,7 +114,7 @@ async function createGame(settings, createdBy) {
     for (const pid of game.players) store.put('boards', `${code}_${pid}`, makeBoard(game, pid)).catch(fail);
   } else {
     const card = G.generateCard({ size: settings.size, difficulty: settings.difficulty, pool: itemPool });
-    const game = { ...base, connect: settings.connect, items: card.items, claims: {}, backups: {} };
+    const game = { ...base, coop: !!settings.coop, connect: settings.connect, items: card.items, claims: {}, backups: {} };
     for (const pid of game.players) game.backups[pid] = versusBackups(game);
     store.put('games', code, game).catch(fail);
   }
@@ -148,7 +148,7 @@ async function confirmDelete(code) {
 
 const settingsFrom = (g) => ({
   mode: g.mode, size: g.size, difficulty: g.difficulty, players: g.players,
-  winRule: g.winRule, minutes: g.minutes || 60, freeCenter: g.freeCenter, sameCard: g.sameCard, connect: g.connect,
+  winRule: g.winRule, minutes: g.minutes || 60, freeCenter: g.freeCenter, sameCard: g.sameCard, connect: g.connect, coop: !!g.coop,
 });
 
 // ───────────────────────── screens ─────────────────────────
@@ -274,15 +274,16 @@ function Home({ me, playersById }) {
         <div class="game-list">
           ${sorted.map((g) => {
             const winner = g.winner && playersById[g.winner];
+            const result = winner ? ` · 🏆 ${winner.name}` : g.winner === 'draw' ? ' · Draw' : g.winner === 'team' ? ' · 🎉 Blacked out' : '';
             return html`
               <div class="game-row-wrap" key=${g.code}>
               <a class="game-row" href="#/g/${g.code}">
-                <span class="tag ${g.mode}">${g.mode === 'bingo' ? 'BINGO' : 'VS'}</span>
+                <span class="tag ${g.mode}">${g.mode === 'bingo' ? 'BINGO' : g.coop ? 'CO-OP' : 'VS'}</span>
                 <span class="grow">
                   <b>${g.code}</b> · ${g.size}×${g.size}
-                  ${g.mode === 'bingo' ? ` · ${G.WIN_RULES[g.winRule]?.label}` : ` · connect ${g.connect}`}
+                  ${g.mode === 'bingo' ? ` · ${G.WIN_RULES[g.winRule]?.label}` : g.coop ? ' · team blackout' : ` · connect ${g.connect}`}
                   <small>${new Date(g.createdAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
-                    ${winner ? ` · 🏆 ${winner.name}` : g.winner === 'draw' ? ' · Draw' : ''}</small>
+                    ${result}</small>
                 </span>
                 <span class="stack">${g.players.slice(0, 5).map((pid) => html`<${Emblem} id=${playersById[pid]?.emblem} size=${26} />`)}</span>
               </a>
@@ -302,7 +303,7 @@ function Home({ me, playersById }) {
         <summary>How to play</summary>
         <ul>
           <li><b>Bingo Hunt:</b> each player gets a card. Tap a square → take a photo → it's marked. Choose a win rule when you create the game.</li>
-          <li><b>Showdown:</b> everyone shares one board. Snap it first to claim it with your emblem. Get N-in-a-row to win.</li>
+          <li><b>Showdown:</b> everyone shares one board. Snap it first to claim it with your emblem. Get N-in-a-row to win. Or pick <b>Co-op</b>: work together to black out the whole board.</li>
           <li><b>Backups:</b> you get 1–3 backup items (based on board size). Tap a backup, then tap any unmarked square to swap it in.</li>
           <li><b>Easy squares</b> are thematic (tails, wings, horns…). ★★★ squares are the rare finds.</li>
           <li>Share the game code or link with your crew. Anyone can join mid-game.</li>
@@ -330,6 +331,7 @@ function NewGame({ mode, me, players }) {
   const [freeCenter, setFreeCenter] = useState(true);
   const [sameCard, setSameCard] = useState(false);
   const [connect, setConnect] = useState(G.defaultConnect(3));
+  const [coop, setCoop] = useState(false);
   const [selected, setSelected] = useState([me.id]);
   const [busy, setBusy] = useState(false);
 
@@ -343,7 +345,7 @@ function NewGame({ mode, me, players }) {
   const create = async () => {
     setBusy(true);
     try {
-      const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, players: selected }, me.id);
+      const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, players: selected }, me.id);
       go(`/g/${code}`);
     } catch (e) {
       toast(`Couldn't create game: ${e.message}`, 'error');
@@ -383,9 +385,13 @@ function NewGame({ mode, me, players }) {
             <label class="toggle"><input type="checkbox" checked=${freeCenter} onChange=${(e) => setFreeCenter(e.target.checked)} />
               <span>Free center square</span></label>`}
         ` : html`
-          <h2>In a row to win</h2>
-          <${Choice} value=${connect} onChange=${setConnect}
-            options=${Array.from({ length: size - 2 }, (_, i) => i + 3).map((k) => [k, `${k} in a row`])} />
+          <h2>Game style</h2>
+          <${Choice} value=${coop} onChange=${setCoop}
+            options=${[[false, 'Race', 'Claim squares, first to get N in a row wins'], [true, 'Co-op', 'Team up and black out the whole board together']]} />
+          ${!coop && html`
+            <h2>In a row to win</h2>
+            <${Choice} value=${connect} onChange=${setConnect}
+              options=${Array.from({ length: size - 2 }, (_, i) => i + 3).map((k) => [k, `${k} in a row`])} />`}
         `}
       </section>
 
@@ -1031,7 +1037,10 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
   const celebrate = useCelebrate(game.winner);
 
   const counts = G.versusCounts(game);
-  const winLine = game.winner && game.winner !== 'draw' ? G.versusWinLine(game, game.winner) : null;
+  const coop = !!game.coop;
+  const total = game.size * game.size;
+  const foundCount = Object.keys(game.claims || {}).length;
+  const winLine = !coop && game.winner && game.winner !== 'draw' ? G.versusWinLine(game, game.winner) : null;
   const winCells = new Set(winLine || []);
   const over = !!game.winner;
   const myBackups = game.backups?.[me.id];
@@ -1077,9 +1086,12 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       res = await store.transact('games', game.code, (g) => {
         if (!g || g.winner || g.claims?.[i]) return undefined;
         g.claims = { ...g.claims, [i]: { by: me.id, photo, at: Date.now() } };
-        if (G.versusWinLine(g, me.id)) {
+        const full = Object.keys(g.claims).length === g.size * g.size;
+        if (g.coop) {
+          if (full) g.winner = 'team';
+        } else if (G.versusWinLine(g, me.id)) {
           g.winner = me.id;
-        } else if (Object.keys(g.claims).length === g.size * g.size) {
+        } else if (full) {
           const c = G.versusCounts(g);
           const best = Math.max(...Object.values(c));
           const leaders = Object.keys(c).filter((k) => c[k] === best);
@@ -1094,8 +1106,12 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     setOpen(null);
     if (!res.ok) {
       const c = res.data?.claims?.[i];
-      toast(c ? `Too slow! ${firstName(playersById[c.by])} got it first.` : 'Game is over!', 'error');
-    } else if (res.data.winner !== me.id) toast('Claimed! 🚩', 'good');
+      const who = c && (c.by === me.id ? 'You' : firstName(playersById[c.by]));
+      toast(c ? (game.coop ? `${who} already found that one!` : `Too slow! ${who} got it first.`) : 'Game is over!', c && game.coop ? 'info' : 'error');
+    } else if (game.coop && !res.data.winner) {
+      const left = game.size * game.size - Object.keys(res.data.claims).length;
+      toast(`Found it! ${left} to go 💪`, 'good');
+    } else if (res.data.winner !== me.id && !game.coop) toast('Claimed! 🚩', 'good');
   };
 
   const editSquare = async (it) => {
@@ -1126,19 +1142,23 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
   return html`
     ${celebrate && html`<${Confetti} />`}
-    <div class="game-info"><span>${game.size}×${game.size} · ${game.connect} in a row wins · ${G.DIFFICULTY[game.difficulty]?.label}</span></div>
+    <div class="game-info"><span>${game.size}×${game.size} · ${coop ? 'Co-op: black out the board' : `${game.connect} in a row wins`} · ${G.DIFFICULTY[game.difficulty]?.label}</span></div>
     ${over && html`<${WinBanner}
-      text=${game.winner === 'draw' ? "IT'S A DRAW!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
-      sub=${!winLine && game.winner !== 'draw' ? 'Board full: most squares wins.' : null}
+      text=${game.winner === 'team' ? 'TEAM BLACKOUT!' : game.winner === 'draw' ? "IT'S A DRAW!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
+      sub=${coop ? `All ${total} squares found together. 🎉` : !winLine && game.winner !== 'draw' ? 'Board full: most squares wins.' : null}
       onRematch=${onRematch} />`}
 
+    ${coop && html`<div class="team-progress">
+      <div class="bar"><span style=${`width:${(foundCount / total) * 100}%`}></span></div>
+      <b>${foundCount} / ${total} found together</b>
+    </div>`}
     <div class="scoreboard">
       ${game.players.map((pid) => {
         const p = playersById[pid];
         return html`<div class="score versus" key=${pid} style=${`--claim:${playerColor(p)}`}>
           <${Emblem} id=${p?.emblem} size=${34} />
           <span class="nm">${pid === me.id ? 'You' : firstName(p)}${game.winner === pid ? ' 🏆' : ''}</span>
-          <span class="pts">${counts[pid] || 0} claimed</span>
+          <span class="pts">${counts[pid] || 0} ${coop ? 'found' : 'claimed'}</span>
         </div>`;
       })}
     </div>
@@ -1160,11 +1180,11 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       photoId=${openClaim?.photo} found=${!!openClaim} thumb=${openClaim?.photo && thumbs[openClaim.photo]?.thumb}
       by=${openClaim && playersById[openClaim.by]} at=${openClaim?.at}
       canAct=${isPlayer && (openClaim ? openClaim.by === me.id && !openClaim.photo : !over)}
-      actionLabel=${openClaim ? 'Add a photo' : 'Snap it to claim'}
+      actionLabel=${openClaim ? 'Add a photo' : coop ? 'Snap it for the team' : 'Snap it to claim'}
       onFile=${claim} onNoPhoto=${!openClaim ? () => claim(null) : null}
-      onRemove=${openClaim?.by === me.id && !over ? unclaim : null} removeLabel="Undo my claim"
+      onRemove=${openClaim?.by === me.id && !over ? unclaim : null} removeLabel=${coop ? 'Unmark square' : 'Undo my claim'}
       onEdit=${isPlayer && !over && !openClaim ? editSquare : null}
-      note=${!openClaim && over ? 'Game over.' : !openClaim && !isPlayer ? 'Join the game to claim squares.' : null}
+      note=${!openClaim && over ? 'Game over.' : !openClaim && !isPlayer ? `Join the game to ${coop ? 'help out' : 'claim squares'}.` : null}
       onClose=${() => setOpen(null)} />`}
   `;
 }

@@ -188,10 +188,10 @@ export async function renderRecap({ game, boards = [], thumbs, playersById }) {
     }
   } else {
     const counts = G.versusCounts(game);
-    highlight = new Set(winnerId && winnerId !== 'draw' ? G.versusWinLine(game, winnerId) || [] : []);
+    highlight = new Set(!game.coop && winnerId && winnerId !== 'draw' ? G.versusWinLine(game, winnerId) || [] : []);
     cells = game.items.map((item, i) => ({ item, photo: game.claims?.[i]?.photo, found: !!game.claims?.[i], by: game.claims?.[i]?.by }));
     for (const pid of game.players.slice().sort((a, b) => (counts[b] || 0) - (counts[a] || 0))) {
-      rows.push({ pid, stats: `${plural(counts[pid] || 0, 'square')} claimed` });
+      rows.push({ pid, stats: `${plural(counts[pid] || 0, 'square')} ${game.coop ? 'found' : 'claimed'}` });
     }
   }
   const totalPhotos = Object.keys(thumbs).length;
@@ -218,7 +218,7 @@ export async function renderRecap({ game, boards = [], thumbs, playersById }) {
   const date = new Date(game.wonAt || game.createdAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
   const modeLine = isBingo
     ? `Bingo Hunt · ${n}×${n} · ${G.WIN_RULES[game.winRule]?.label || ''}`
-    : `Showdown · ${n}×${n} · ${game.connect} in a row`;
+    : `Showdown · ${n}×${n} · ${game.coop ? 'Co-op blackout' : `${game.connect} in a row`}`;
   ctx.font = `900 34px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'center';
   ctx.fillText(`${modeLine} · ${date}`, W / 2, 200);
   let y = H_TITLE;
@@ -239,7 +239,7 @@ export async function renderRecap({ game, boards = [], thumbs, playersById }) {
   ctx.restore();
   ctx.lineWidth = 6; ctx.strokeStyle = INK; roundRect(ctx, PAD, y, boardW, H_WIN - 30, 22); ctx.stroke();
   const winner = winnerId && winnerId !== 'draw' ? playersById[winnerId] : null;
-  const headline = winnerId === 'draw' ? "IT'S A TIE!" : winner ? `${firstName(winner).toUpperCase()} WINS!` : 'THE HUNT GOES ON…';
+  const headline = winnerId === 'team' ? 'TEAM BLACKOUT!' : winnerId === 'draw' ? "IT'S A TIE!" : winner ? `${firstName(winner).toUpperCase()} WINS!` : 'THE HUNT GOES ON…';
   if (winner) {
     const em = await getEmblem(winnerId);
     if (em) ctx.drawImage(em, PAD + 30, by - 65, 130, 130);
@@ -254,7 +254,7 @@ export async function renderRecap({ game, boards = [], thumbs, playersById }) {
   ctx.font = `900 34px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'left';
   const caption = isBingo
     ? (featured ? `${firstName(playersById[featured.playerId])}'s ${winnerId === featured.playerId ? 'winning ' : ''}card` : 'The card')
-    : 'The battlefield';
+    : game.coop ? 'The team board' : 'The battlefield';
   ctx.fillText(caption.toUpperCase(), PAD, y + 40);
   y += H_CAPTION;
   await drawBoard(ctx, { x: PAD, y, w: boardW, n, cells, highlight, versus: !isBingo, thumbs, getEmblem, playersById });
