@@ -1944,6 +1944,18 @@ function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     }).catch((e) => toast(`Swapping needs a connection: ${e.message}`, 'error'));
   };
 
+  // Whole-hand reroll: a fresh set of cards, counted as one reroll.
+  const rerollHand = async () => {
+    const res = await tx((g) => {
+      const old = g.hands?.[me.id] || [];
+      if (g.pending?.[me.id]) return false;
+      g.hands = { ...g.hands, [me.id]: [] };
+      g.hands = { ...g.hands, [me.id]: drawHand(g, handSize(g), old.map((it) => it.text)) };
+      g.rerolls = { ...g.rerolls, [me.id]: (g.rerolls?.[me.id] || 0) + 1 };
+    });
+    if (!res.ok) toast('Place your find before rerolling your hand.', 'error');
+  };
+
   const tapSquare = (i) => {
     if (game.claims?.[i]) return setOpen(i);
     if (over || !isPlayer) return;
@@ -1994,7 +2006,10 @@ function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     <//>
 
     ${isPlayer && !over && html`<section class="hand">
-      <h3>Your hand <small>${pending ? '· place your find first' : '· tap one to snap it'}</small></h3>
+      <div class="hand-head">
+        <h3>Your hand <small>${pending ? '· place your find first' : '· tap one to snap it'}</small></h3>
+        ${!game.noSwaps && html`<button class="btn small ghost" disabled=${!!pending} onClick=${rerollHand}>🎲 Reroll hand</button>`}
+      </div>
       <div class="hand-grid">
         ${hand.map((it, idx) => html`<button class=${`hand-card cat-${it.cat}`} key=${it.text} disabled=${!!pending} onClick=${() => setHandIdx(idx)}>
           <span class="icon">${it.icon}</span><span class="txt">${it.text}</span><span class="stars">${TIER_STARS[it.tier]}</span>
@@ -2004,7 +2019,6 @@ function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
     ${card && html`<${SquareModal} item=${card} found=${false} canAct=${!pending && !over} actionLabel="Snap it"
       onFile=${(f) => snap(handIdx, f)} onNoPhoto=${() => snap(handIdx, null)}
-      onReroll=${game.noSwaps ? null : () => swapCard(handIdx, null, true)} rerolls=${game.rerolls?.[me.id] || 0}
       onBlock=${() => { blockItem(card.text); swapCard(handIdx, null, false); setHandIdx(null); }}
       onClose=${() => setHandIdx(null)} />`}
     ${openClaim && html`<${SquareModal} item=${game.items[open]} photoId=${openClaim.photo} found=${true}

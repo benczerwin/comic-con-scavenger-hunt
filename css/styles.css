@@ -655,3 +655,6 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .hand-card:active, .alt-row:active, .hist-row:active, .game-main:active, .tile:active, .icon-btn:active, .x:active {
   filter: brightness(0.9);
 }
+
+.hand-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); margin-bottom: var(--s2); }
+.hand-head h3 { margin: 0; }
