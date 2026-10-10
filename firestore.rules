@@ -1,0 +1,11 @@
+rules_version = '2';
+// Open access for a private game between friends, auto-expiring after the con season.
+// Game codes are unguessable-ish; don't post your site URL publicly.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{collection}/{id} {
+      allow read, write: if collection in ['players', 'games', 'boards', 'thumbs', 'photos']
+        && request.time < timestamp.date(2027, 1, 31);
+    }
+  }
+}
