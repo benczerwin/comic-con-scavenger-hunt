@@ -74,9 +74,9 @@ let itemPool = ITEMS;
 const modeTag = (g) => (g.mode === 'bingo' ? 'SOLO' : g.coop ? 'CO-OP' : 'X-OVER');
 
 const MIXES = {
-  all: { label: 'Everything', blurb: 'Characters, objects, con moments & challenges' },
+  all: { label: 'Everything', blurb: 'Characters, fandom gear, costume details, con moments & challenges' },
   char: { label: 'Characters only', blurb: 'Specific characters, shows, movies & games', short: 'Characters' },
-  obj: { label: 'Objects & themes', blurb: 'Merch, props & looks: keychains, wings, wigs…', short: 'Objects & themes' },
+  obj: { label: 'Fandom gear', blurb: 'Objects from a franchise: a Pokémon bag, a Star Wars mug…', short: 'Fandom gear' },
 };
 const mixOf = (g) => g.mix || (g.charsOnly ? 'char' : 'all'); // charsOnly: games made before mixes existed
 const poolFor = (g) => { const m = mixOf(g); return m === 'all' ? itemPool : itemPool.filter((it) => itemKind(it) === m); };
@@ -593,7 +593,7 @@ function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compa
       </div>
       <${Choice} value=${tier} onChange=${setTier} options=${Object.entries(TIER_LABELS).map(([k, l]) => [k, l, TIER_STARS[k]])} />
       <select class="text" value=${cat} onChange=${(e) => setCat(e.target.value)} aria-label="Category">
-        ${Object.entries(CATEGORY_LABELS).map(([k, l]) => html`<option value=${k}>${l}</option>`)}
+        ${Object.entries(CATEGORY_LABELS).map(([k, l]) => html`<option value=${k}>${l} (${KIND_HINT[itemKind({ cat: k }) ?? 'other']})</option>`)}
       </select>
       <div class="row end">
         ${onCancel && html`<button type="button" class="btn ghost small" onClick=${onCancel}>Cancel</button>`}
@@ -602,10 +602,13 @@ function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compa
     </form>`;
 }
 
+const KIND_HINT = { char: 'Characters + Everything boards', obj: 'Fandom gear + Everything boards', other: 'Everything boards only' };
+
 function ItemsScreen({ bank }) {
   const [q, setQ] = useState('');
   const [tier, setTier] = useState('all');
   const [show, setShow] = useState('all'); // all | on | off | custom
+  const [kind, setKind] = useState('all'); // all | char | obj | other: which board mix an item can land in
   const disabled = new Set(bank?.disabled || []);
   const custom = bank?.custom || [];
   const all = [...custom.map((c) => ({ ...c, custom: true })), ...ITEMS];
@@ -638,6 +641,7 @@ function ItemsScreen({ bank }) {
   const needle = q.trim().toLowerCase();
   const filtered = all.filter((it) =>
     (tier === 'all' || it.tier === tier) &&
+    (kind === 'all' || (itemKind(it) ?? 'other') === kind) &&
     (show === 'all' || (show === 'on' && !disabled.has(it.text)) || (show === 'off' && disabled.has(it.text)) || (show === 'custom' && it.custom)) &&
     (!needle || it.text.toLowerCase().includes(needle)));
   const byCat = Object.keys(CATEGORY_LABELS).map((cat) => [cat, filtered.filter((i) => i.cat === cat)]).filter(([, xs]) => xs.length);
@@ -657,6 +661,10 @@ function ItemsScreen({ bank }) {
       <section class="panel sticky-filters">
         <input class="text" type="search" placeholder="Search items…" value=${q} onInput=${(e) => setQ(e.target.value)} />
         <div class="filter-row">
+          ${[['all', 'All boards'], ['char', '🦸 Characters'], ['obj', '🎒 Fandom gear'], ['other', 'Everything-only']].map(([k, l]) => html`
+            <button class="pill ${kind === k ? 'sel' : ''}" onClick=${() => setKind(k)}>${l}</button>`)}
+        </div>
+        <div class="filter-row">
           ${[['all', 'All'], ['e', '★'], ['m', '★★'], ['h', '★★★']].map(([k, l]) => html`
             <button class="pill ${tier === k ? 'sel' : ''}" onClick=${() => setTier(k)}>${l}</button>`)}
           <span class="sep"></span>
@@ -672,7 +680,7 @@ function ItemsScreen({ bank }) {
 
       ${byCat.map(([cat, items]) => html`
         <section class="panel item-group" key=${cat}>
-          <h2><span class="dot cat-${cat}"></span>${CATEGORY_LABELS[cat]} <small class="muted">${items.length}</small></h2>
+          <h2><span class="dot cat-${cat}"></span>${CATEGORY_LABELS[cat]} <small class="muted">${items.length} · ${KIND_HINT[itemKind({ cat }) ?? 'other']}</small></h2>
           ${items.map((it) => {
             const on = !disabled.has(it.text);
             return html`<div class="item-row ${on ? '' : 'off'}" key=${it.text}>
