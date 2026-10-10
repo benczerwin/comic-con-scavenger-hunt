@@ -1013,6 +1013,7 @@ function RecapModal({ recap, code, playersById, onFeature, onClose }) {
   return html`
     <div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && onClose()}>
       <div class="modal recap">
+        <div class="recap-head">
         <button class="x" onClick=${onClose} aria-label="Close">×</button>
         <h2 class="recap-title">Game recap</h2>
         ${recap.boards?.length > 1 && html`<div class="recap-pick">
@@ -1023,6 +1024,7 @@ function RecapModal({ recap, code, playersById, onFeature, onClose }) {
             <${Emblem} id=${playersById[b.playerId]?.emblem} size=${22} /> ${firstName(playersById[b.playerId])}
           </button>`)}
         </div>`}
+        </div>
         ${recap.url ? html`
           <img class="recap-img" src=${recap.url} alt="Game recap" />
           <p class="muted small center">Tip: press and hold the image to save it to Photos.</p>

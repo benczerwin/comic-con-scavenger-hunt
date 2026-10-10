@@ -394,6 +394,8 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 /* recap */
 .center-row { justify-content: center; flex-wrap: wrap; }
 .game-footer { gap: 10px; flex-wrap: wrap; }
+.recap-head { position: sticky; top: -18px; z-index: 2; margin: -18px -16px 0; padding: 18px 16px 10px;
+  background: var(--paper); border-bottom: 2px solid rgba(0, 0, 0, 0.12); }
 .recap-title { font-family: var(--display); font-size: 2rem; margin: 0; letter-spacing: 1px; }
 .recap-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0; }
 .recap-pick .chip:disabled { opacity: 0.5; }
