@@ -435,6 +435,7 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
   background: linear-gradient(transparent, rgba(0,0,0,0.6));
 }
 .camera-bar .btn { flex: 1; max-width: 200px; font-size: 1.1rem; padding: 14px; }
+.camera-bar .btn.ghost { color: var(--ink); }
 .cam-spacer { width: 52px; }
 .shutter {
   width: 78px; height: 78px; border-radius: 50%; border: 5px solid #fff; background: transparent; padding: 5px;
