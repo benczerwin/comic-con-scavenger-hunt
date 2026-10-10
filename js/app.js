@@ -1223,8 +1223,10 @@ function useSwipeDown(onClose) {
       if (startY === null) return;
       dy = e.touches[0].clientY - startY;
       if (dy <= 0 || el.scrollTop > 0) { dy = 0; el.style.transform = ''; return; }
+      // Ignore the small wobble of a normal tap: blocking it would cancel the tap on iOS.
+      if (dy < 12) return;
       e.preventDefault(); // drag the sheet instead of scrolling it
-      el.style.transform = `translateY(${dy}px)`;
+      el.style.transform = `translateY(${dy - 12}px)`;
     };
     const end = () => {
       if (startY === null) return;
