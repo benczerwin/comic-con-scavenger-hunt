@@ -280,7 +280,7 @@ function Home({ me, playersById }) {
           <a class="round-btn" href="#/stats" aria-label="Player stats" title="Player stats">${STATS_ICON}</a>
           <a class="round-btn" href="#/settings" aria-label="Settings" title="Settings">${GEAR_ICON}</a>
           <button class="me" onClick=${() => go('/profile')} title="Edit profile">
-            <${Emblem} id=${me.emblem} size=${40} /><span>${firstName(me)}</span>
+            <${Emblem} id=${me.emblem} size=${36} /><span>${firstName(me)}</span>
           </button>
         </div>
       </header>
