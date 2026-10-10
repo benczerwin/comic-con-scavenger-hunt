@@ -316,7 +316,7 @@ function PlayersSheet({ players, me, onRemove, onSwitch, onClose }) {
 
 function Home({ me, playersById }) {
   const games = useWatch((cb) => store.watchWhere('games', 'players', 'array-contains', me.id, cb), [me.id]);
-  const [code, setCode] = useState('');
+  const [joinOpen, setJoinOpen] = useState(false);
   const sorted = (games || []).slice().sort((a, b) => b.createdAt - a.createdAt);
   const [day, setDay] = useState('all');
   const [who, setWho] = useState('all');
@@ -325,11 +325,6 @@ function Home({ me, playersById }) {
   const people = [...new Set(sorted.flatMap((g) => g.players))].filter((pid) => playersById[pid]);
   const shown = sorted.filter((g) => (day === 'all' || dayKey(g.createdAt) === day) && (who === 'all' || g.players.includes(who)));
 
-  const join = (e) => {
-    e.preventDefault();
-    const c = code.trim().toUpperCase().replace(/^NYCC-?/, '');
-    if (c) go(`/g/${c}`);
-  };
 
   return html`
     <main class="screen">
@@ -364,19 +359,13 @@ function Home({ me, playersById }) {
         </a>
       </section>
 
-      <form class="panel join" onSubmit=${join}>
-        <h2>Join a game</h2>
-        <div class="row">
-          <input class="text code" placeholder="CODE" value=${code} maxlength="10"
-            onInput=${(e) => setCode(e.target.value.toUpperCase())} />
-          <button class="btn primary">Join</button>
-        </div>
-      </form>
-
       <section class="panel">
         <div class="panel-head">
           <h2>Your games</h2>
-          <a class="round-btn small" href="#/collage" aria-label="Make a collage" title="Make a collage">${COLLAGE_ICON}</a>
+          <div class="hero-actions">
+            <button class="round-btn small" onClick=${() => setJoinOpen(true)} aria-label="Join a game" title="Join a game">${JOIN_ICON}</button>
+            <a class="round-btn small" href="#/collage" aria-label="Make a collage" title="Make a collage">${COLLAGE_ICON}</a>
+          </div>
         </div>
         ${games === undefined && html`<p class="muted">Loading…</p>`}
         ${games && !sorted.length && html`<p class="muted">No games yet. Start one above!</p>`}
@@ -396,7 +385,33 @@ function Home({ me, playersById }) {
         </div>
         ${sorted.length > 0 && !shown.length && html`<p class="muted center">No games match.</p>`}
       </section>
+      ${joinOpen && html`<${JoinSheet} onClose=${() => setJoinOpen(false)} />`}
     </main>`;
+}
+
+/** Enter a friend's game code. */
+function JoinSheet({ onClose }) {
+  useScrollLock();
+  const sheet = useSwipeDown(onClose);
+  const [code, setCode] = useState('');
+  const join = (e) => {
+    e.preventDefault();
+    const c = code.trim().toUpperCase().replace(/^NYCC-?/, '');
+    if (c) { onClose(); go(`/g/${c}`); }
+  };
+  return html`
+    <div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && onClose()}>
+      <form class="modal" ref=${sheet} onSubmit=${join}>
+        <button type="button" class="x" onClick=${onClose} aria-label="Close">×</button>
+        <h2 class="recap-title">Join a game</h2>
+        <p class="muted">Type the code your friend shared.</p>
+        <div class="row">
+          <input class="text code" placeholder="CODE" value=${code} maxlength="10" autofocus
+            onInput=${(e) => setCode(e.target.value.toUpperCase())} />
+          <button class="btn primary" disabled=${!code.trim()}>Join</button>
+        </div>
+      </form>
+    </div>`;
 }
 
 const dayLabel = (key) => {
@@ -608,6 +623,9 @@ const STATS_ICON = html`<svg viewBox="0 0 24 24" width="26" height="26" aria-hid
   <rect x="3" y="11" width="5" height="10" rx="1.5" /><rect x="9.5" y="4" width="5" height="17" rx="1.5" /><rect x="16" y="8" width="5" height="13" rx="1.5" /></svg>`;
 const GEAR_ICON = svgIcon('M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z');
 const PEOPLE_ICON = svgIcon('M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8', 20);
+
+// Arrow into a door: join a game.
+const JOIN_ICON = svgIcon('M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3', 20);
 
 // A little stack of photos.
 const COLLAGE_ICON = html`<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor"
