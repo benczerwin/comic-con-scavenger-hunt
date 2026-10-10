@@ -1014,6 +1014,12 @@ function Tile({ item, thumb, found, stamp, win, swapTarget, claimColor, onClick 
     </button>`;
 }
 
+/** Your rerolls in this game, at the top right of the info line. */
+function RerollPill({ game, n, show }) {
+  if (!show || game.noSwaps) return null;
+  return html`<span class="reroll-pill" title="Rerolls you've used this game">🎲 ${n} reroll${n === 1 ? '' : 's'}</span>`;
+}
+
 function Board({ size, children }) {
   return html`<div class="board s${size}" style=${`--n:${size}`}>${children}</div>`;
 }
@@ -1595,7 +1601,10 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     ${celebrate && html`<${Confetti} />`}
     <div class="game-info">
       <span>${game.size}×${game.size} · ${G.WIN_RULES[game.winRule]?.label}${diffTag(game)}${mixTag(game)}${tiersTag(game)}</span>
-      ${game.endsAt && html`<span class="timer ${timeUp ? 'over' : ''}">⏱ ${timeUp ? "Time's up!" : G.fmtDuration(game.endsAt - now)}</span>`}
+      <span class="info-right">
+        ${game.endsAt && html`<span class="timer ${timeUp ? 'over' : ''}">⏱ ${timeUp ? "Time's up!" : G.fmtDuration(game.endsAt - now)}</span>`}
+        <${RerollPill} game=${game} n=${ordered.find((b) => b.playerId === me.id)?.rerolls || 0} show=${ordered.some((b) => b.playerId === me.id)} />
+      </span>
     </div>
     ${winnerId && html`<${WinBanner}
       text=${winnerId === 'draw' ? "IT'S A TIE!" : winnerId === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
@@ -1780,7 +1789,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
   return html`
     ${celebrate && html`<${Confetti} />`}
-    <div class="game-info"><span>${game.size}×${game.size} · ${coop ? 'Co-op: black out the board' : `${game.connect} in a row wins`}${diffTag(game)}${mixTag(game)}${tiersTag(game)}</span></div>
+    <div class="game-info"><span>${game.size}×${game.size} · ${coop ? 'Co-op: black out the board' : `${game.connect} in a row wins`}${diffTag(game)}${mixTag(game)}${tiersTag(game)}</span><${RerollPill} game=${game} n=${game.rerolls?.[me.id] || 0} show=${isPlayer} /></div>
     ${over && html`<${WinBanner}
       text=${game.winner === 'team' ? 'TEAM BLACKOUT!' : game.winner === 'draw' ? "IT'S A DRAW!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
       sub=${coop ? `All ${total} squares found together. 🎉` : !winLine && game.winner !== 'draw' ? 'Board full: most squares wins.' : null}
@@ -1925,7 +1934,7 @@ function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
   return html`
     ${celebrate && html`<${Confetti} />`}
-    <div class="game-info"><span>${game.size}×${game.size} · Empty board · ${coop ? 'Co-op: fill the board' : `${game.connect} in a row wins`}${mixTag(game)}${tiersTag(game)}</span></div>
+    <div class="game-info"><span>${game.size}×${game.size} · Empty board · ${coop ? 'Co-op: fill the board' : `${game.connect} in a row wins`}${mixTag(game)}${tiersTag(game)}</span><${RerollPill} game=${game} n=${game.rerolls?.[me.id] || 0} show=${isPlayer} /></div>
     ${over && html`<${WinBanner}
       text=${game.winner === 'team' ? 'TEAM BLACKOUT!' : game.winner === 'draw' ? "IT'S A DRAW!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
       sub=${coop ? `All ${total} squares filled together. 🎉` : !winLine && game.winner !== 'draw' ? 'Board full: most squares wins.' : null}
@@ -2096,7 +2105,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
   return html`
     ${celebrate && html`<${Confetti} />`}
-    <div class="game-info"><span>Endless · ${findCount(game)} find${findCount(game) === 1 ? '' : 's'} · ${st.slots} active · ${turns ? 'Taking turns' : 'Anyone snaps'}${mixTag(game)}</span></div>
+    <div class="game-info"><span>Endless · ${findCount(game)} find${findCount(game) === 1 ? '' : 's'} · ${st.slots} active · ${turns ? 'Taking turns' : 'Anyone snaps'}${mixTag(game)}</span><${RerollPill} game=${game} n=${game.rerolls?.[me.id] || 0} show=${isPlayer} /></div>
     ${over && html`<${WinBanner}
       text=${game.winner === 'draw' ? "IT'S A TIE!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
       sub="Most points when the game ended." onRematch=${onRematch} />`}

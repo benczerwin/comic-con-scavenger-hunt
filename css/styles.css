@@ -638,3 +638,7 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .cat-opt:not(.sel) .dot { background: #fff; }
 .cat-opt.sel { background: var(--yellow); box-shadow: 3px 3px 0 var(--ink); }
 .filter-row .pill .dot { display: inline-block; width: 10px; height: 10px; vertical-align: middle; }
+
+.info-right { display: flex; align-items: center; gap: var(--s2); }
+.reroll-pill { flex: none; margin-left: auto; padding: 3px 10px; border: 2px solid var(--ink); border-radius: 999px; background: #fff; font-weight: 800; font-size: 0.8rem; white-space: nowrap; }
+.info-right .reroll-pill { margin-left: 0; }
