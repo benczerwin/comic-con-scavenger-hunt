@@ -390,3 +390,15 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .recap-title { font-family: var(--display); font-size: 2rem; margin: 0; letter-spacing: 1px; }
 .recap-img { width: 100%; border: 3px solid var(--ink); border-radius: 12px; display: block; -webkit-touch-callout: default; }
 .recap-loading { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 60px 0; font-family: var(--display); font-size: 1.5rem; }
+
+/* found without a photo */
+.tile.found { background-color: var(--tile); }
+.tile.found .icon, .tile.found .txt { opacity: 0.45; }
+.tile .check {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-family: var(--display); font-size: calc(min(680px, 100vw) / var(--n) * 0.55); color: var(--green);
+  -webkit-text-stroke: 2px var(--ink); text-shadow: 3px 3px 0 var(--ink); pointer-events: none;
+}
+.board.s3 .tile .check { font-size: 5rem; }
+.tile.found[style*='--claim'] { box-shadow: inset 0 0 0 4px var(--claim); }
+.found-note { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; font-weight: 800; margin: 0; }

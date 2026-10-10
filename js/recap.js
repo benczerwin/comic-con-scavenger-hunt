@@ -90,6 +90,64 @@ function comicText(ctx, text, x, y, size, fill, align = 'center') {
 
 const firstName = (p) => (p?.name || 'Someone').split(' ')[0];
 
+/** Draws an n×n board at (x, y), w wide. cells: [{ item, photo, found, by }] */
+async function drawBoard(ctx, { x, y, w, n, cells, highlight, versus, thumbs, getEmblem, playersById }) {
+  const mini = w < 700;
+  ctx.fillStyle = INK; roundRect(ctx, x, y, w, w, mini ? 14 : 20); ctx.fill();
+  const inner = mini ? 6 : 10, gap = mini ? 5 : n >= 6 ? 8 : 10;
+  const cell = (w - inner * 2 - gap * (n - 1)) / n;
+  for (let i = 0; i < cells.length; i++) {
+    const { item, photo, found, by } = cells[i];
+    const cx = x + inner + (i % n) * (cell + gap);
+    const cy = y + inner + Math.floor(i / n) * (cell + gap);
+    const img = photo ? await loadImg(thumbs[photo]?.thumb) : null;
+    const r = mini ? 6 : 10;
+    ctx.save();
+    roundRect(ctx, cx, cy, cell, cell, r); ctx.clip();
+    if (img) {
+      ctx.drawImage(img, cx, cy, cell, cell);
+      if (!mini || cell > 120) {
+        const g = ctx.createLinearGradient(0, cy + cell * 0.55, 0, cy + cell);
+        g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.75)');
+        ctx.fillStyle = g; ctx.fillRect(cx, cy + cell * 0.55, cell, cell * 0.45);
+        ctx.font = `800 ${Math.max(12, cell * 0.095)}px ${BODY}`; ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+        ctx.fillText(wrapLines(ctx, item.text, cell - 12, 1)[0], cx + cell / 2, cy + cell - cell * 0.07);
+      }
+    } else {
+      ctx.fillStyle = CAT_COLORS[item.cat] || '#fff'; ctx.fillRect(cx, cy, cell, cell);
+      halftone(ctx, cx, cy, cell, cell, 'rgba(0,0,0,0.12)', mini ? 6 : 9, mini ? 1 : 1.4);
+      ctx.globalAlpha = item.tier === 'free' ? 1 : found ? 0.4 : 0.55;
+      ctx.font = `${cell * (mini ? 0.42 : 0.34)}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = INK;
+      ctx.fillText(item.icon, cx + cell / 2, cy + cell * (mini ? 0.42 : 0.36));
+      ctx.textBaseline = 'alphabetic';
+      if (!mini || item.tier === 'free') {
+        const fs = item.tier === 'free' ? cell * 0.15 : Math.max(11, cell * 0.1);
+        ctx.font = item.tier === 'free' ? `${fs}px ${DISPLAY}` : `800 ${fs}px ${BODY}`;
+        const lines = wrapLines(ctx, item.text, cell - 14, mini ? 1 : 3);
+        lines.forEach((l, k) => ctx.fillText(l, cx + cell / 2, cy + cell * (mini ? 0.82 : 0.66) + k * fs * 1.1));
+      }
+      ctx.globalAlpha = 1;
+      if (found) comicText(ctx, '✓', cx + cell / 2, cy + cell * 0.72, cell * 0.7, '#22c55e');
+    }
+    ctx.restore();
+    if ((img || found) && by) {
+      const em = await getEmblem(by);
+      const es = Math.max(mini ? 16 : 26, cell * 0.24);
+      if (em) ctx.drawImage(em, cx + (mini ? 3 : 6), cy + (mini ? 3 : 6), es, es);
+      if (versus) {
+        ctx.lineWidth = Math.max(5, cell * 0.05);
+        ctx.strokeStyle = emblemById(playersById[by]?.emblem).c1;
+        roundRect(ctx, cx + ctx.lineWidth / 2, cy + ctx.lineWidth / 2, cell - ctx.lineWidth, cell - ctx.lineWidth, r - 1); ctx.stroke();
+      }
+    }
+    if (highlight.has(i)) {
+      ctx.lineWidth = mini ? 4 : 7; ctx.strokeStyle = YELLOW;
+      roundRect(ctx, cx - 2, cy - 2, cell + 4, cell + 4, r + 2); ctx.stroke();
+    }
+  }
+}
+
 /**
  * game: game doc. boards: bingo boards (ignored for versus). thumbs: {photoId: {thumb}}.
  * Returns a PNG Blob.
@@ -101,55 +159,51 @@ export async function renderRecap({ game, boards = [], thumbs, playersById }) {
 
   const isBingo = game.mode === 'bingo';
   const n = game.size;
+  const emblemCache = {};
+  const getEmblem = async (pid) => (emblemCache[pid] ??= await emblemImg(playersById[pid]?.emblem));
+  const boardCells = (b) => b.items.map((item, i) => ({ item, photo: b.marks?.[i]?.photo, found: !!b.marks?.[i], by: b.playerId }));
 
   // ── who won, which board to feature, stats per player
   let featured, cells, highlight, winnerId = game.winner;
+  let others = []; // bingo: [{ b, s }] for every non-featured board
   const rows = [];
+  const plural = (k, word) => `${k} ${word}${k === 1 ? '' : 's'}`;
   if (isBingo) {
-    const scored = boards.map((b) => ({ b, s: G.scoreBoard(b) }));
+    const scored = boards.map((b) => ({ b, s: G.scoreBoard(b) })).sort((a, c) => c.s.points - a.s.points);
     if (!winnerId && game.winRule === 'most' && scored.length) {
-      const best = Math.max(...scored.map((x) => x.s.points));
+      const best = scored[0].s.points;
       const leaders = scored.filter((x) => x.s.points === best);
       winnerId = leaders.length === 1 ? leaders[0].b.playerId : 'draw';
     }
-    const top = scored.find((x) => x.b.playerId === winnerId) ||
-      scored.slice().sort((a, b) => b.s.points - a.s.points)[0];
+    const top = scored.find((x) => x.b.playerId === winnerId) || scored[0];
     featured = top?.b;
     highlight = top?.s.lineCells || new Set();
-    cells = featured ? featured.items.map((item, i) => ({
-      item, photo: featured.marks?.[i]?.photo, by: featured.playerId,
-    })) : [];
-    for (const { b, s } of scored.sort((a, c) => c.s.points - a.s.points)) {
+    cells = featured ? boardCells(featured) : [];
+    others = scored.filter((x) => x !== top);
+    for (const { b, s } of scored) {
       rows.push({
         pid: b.playerId,
-        stats: `${s.found} photo${s.found === 1 ? '' : 's'} · ${s.lines} line${s.lines === 1 ? '' : 's'}${game.winRule === 'most' ? ` · ${s.points} pts` : ''}`,
+        stats: `${plural(s.found, 'find')} · ${plural(s.lines, 'line')}${game.winRule === 'most' ? ` · ${s.points} pts` : ''}`,
       });
     }
   } else {
     const counts = G.versusCounts(game);
     highlight = new Set(winnerId && winnerId !== 'draw' ? G.versusWinLine(game, winnerId) || [] : []);
-    cells = game.items.map((item, i) => ({ item, photo: game.claims?.[i]?.photo, by: game.claims?.[i]?.by }));
+    cells = game.items.map((item, i) => ({ item, photo: game.claims?.[i]?.photo, found: !!game.claims?.[i], by: game.claims?.[i]?.by }));
     for (const pid of game.players.slice().sort((a, b) => (counts[b] || 0) - (counts[a] || 0))) {
-      rows.push({ pid, stats: `${counts[pid] || 0} square${counts[pid] === 1 ? '' : 's'} claimed` });
+      rows.push({ pid, stats: `${plural(counts[pid] || 0, 'square')} claimed` });
     }
   }
-
-  // Extra photos not on the featured board (bingo: everyone else's finds).
-  const extra = isBingo
-    ? boards.filter((b) => b !== featured).flatMap((b) =>
-      Object.entries(b.marks || {}).map(([i, m]) => ({ photo: m.photo, by: b.playerId, text: b.items[i]?.text, at: m.at })))
-      .filter((x) => thumbs[x.photo]).sort((a, b) => b.at - a.at).slice(0, 10)
-    : [];
   const totalPhotos = Object.keys(thumbs).length;
 
   // ── layout
   const boardW = W - PAD * 2;
   const H_TITLE = 250, H_WIN = 210, H_CAPTION = 70, H_BOARD = boardW + 20, H_ROW = 92;
   const H_SCORES = 70 + rows.length * H_ROW + 20;
-  const stripCols = 5, stripCell = (boardW - (stripCols - 1) * 14) / stripCols;
-  const H_STRIP = extra.length ? 80 + Math.ceil(extra.length / stripCols) * (stripCell + 14) : 0;
+  const colGap = 28, colW = (boardW - colGap) / 2, H_MINI_HEAD = 70;
+  const H_OTHERS = others.length ? 70 + Math.ceil(others.length / 2) * (H_MINI_HEAD + colW + 36) : 0;
   const H_FOOT = 110;
-  const H = H_TITLE + H_WIN + H_CAPTION + H_BOARD + 40 + H_SCORES + (H_STRIP ? H_STRIP + 30 : 0) + H_FOOT;
+  const H = H_TITLE + H_WIN + H_CAPTION + H_BOARD + 40 + (H_OTHERS ? H_OTHERS + 10 : 0) + H_SCORES + H_FOOT;
 
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
@@ -160,7 +214,6 @@ export async function renderRecap({ game, boards = [], thumbs, playersById }) {
   halftone(ctx, 0, 0, W, H, 'rgba(239,62,54,0.10)', 18, 2.2);
 
   // title
-  let y = 0;
   comicText(ctx, 'NYCC PHOTO HUNT', W / 2, 140, 118, RED);
   const date = new Date(game.wonAt || game.createdAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
   const modeLine = isBingo
@@ -168,20 +221,19 @@ export async function renderRecap({ game, boards = [], thumbs, playersById }) {
     : `Showdown · ${n}×${n} · ${game.connect} in a row`;
   ctx.font = `900 34px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'center';
   ctx.fillText(`${modeLine} · ${date}`, W / 2, 200);
-  y = H_TITLE;
+  let y = H_TITLE;
 
   // winner burst panel
   panel(ctx, PAD, y, boardW, H_WIN - 30, YELLOW);
   ctx.save();
   roundRect(ctx, PAD, y, boardW, H_WIN - 30, 22); ctx.clip();
-  const cx = PAD + boardW / 2, cy = y + (H_WIN - 30) / 2;
+  const bx = PAD + boardW / 2, by = y + (H_WIN - 30) / 2;
   ctx.fillStyle = 'rgba(255,255,255,0.4)';
-  for (let a = 0; a < 24; a++) {
-    if (a % 2) continue;
+  for (let a = 0; a < 24; a += 2) {
     const a0 = (a / 24) * Math.PI * 2, a1 = ((a + 1) / 24) * Math.PI * 2;
-    ctx.beginPath(); ctx.moveTo(cx, cy);
-    ctx.lineTo(cx + Math.cos(a0) * 900, cy + Math.sin(a0) * 900);
-    ctx.lineTo(cx + Math.cos(a1) * 900, cy + Math.sin(a1) * 900);
+    ctx.beginPath(); ctx.moveTo(bx, by);
+    ctx.lineTo(bx + Math.cos(a0) * 900, by + Math.sin(a0) * 900);
+    ctx.lineTo(bx + Math.cos(a1) * 900, by + Math.sin(a1) * 900);
     ctx.closePath(); ctx.fill();
   }
   ctx.restore();
@@ -189,74 +241,45 @@ export async function renderRecap({ game, boards = [], thumbs, playersById }) {
   const winner = winnerId && winnerId !== 'draw' ? playersById[winnerId] : null;
   const headline = winnerId === 'draw' ? "IT'S A TIE!" : winner ? `${firstName(winner).toUpperCase()} WINS!` : 'THE HUNT GOES ON…';
   if (winner) {
-    const em = await emblemImg(winner.emblem);
-    if (em) ctx.drawImage(em, PAD + 30, cy - 65, 130, 130);
+    const em = await getEmblem(winnerId);
+    if (em) ctx.drawImage(em, PAD + 30, by - 65, 130, 130);
     ctx.font = '72px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('🏆', PAD + boardW - 85, cy + 4);
+    ctx.fillText('🏆', PAD + boardW - 85, by + 4);
     ctx.textBaseline = 'alphabetic';
   }
-  comicText(ctx, headline, cx + (winner ? 10 : 0), cy + 36, headline.length > 14 ? 88 : 104, RED);
+  comicText(ctx, headline, bx + (winner ? 10 : 0), by + 36, headline.length > 14 ? 88 : 104, RED);
   y += H_WIN;
 
-  // board caption
+  // featured board
   ctx.font = `900 34px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'left';
   const caption = isBingo
-    ? `${featured ? `${firstName(playersById[featured.playerId])}'s ${winnerId === featured?.playerId ? 'winning ' : ''}card` : 'The card'}`
+    ? (featured ? `${firstName(playersById[featured.playerId])}'s ${winnerId === featured.playerId ? 'winning ' : ''}card` : 'The card')
     : 'The battlefield';
   ctx.fillText(caption.toUpperCase(), PAD, y + 40);
   y += H_CAPTION;
-
-  // board
-  ctx.fillStyle = INK; roundRect(ctx, PAD, y, boardW, boardW, 20); ctx.fill();
-  const gap = n >= 6 ? 8 : 10, inner = 10;
-  const cell = (boardW - inner * 2 - gap * (n - 1)) / n;
-  const emblemCache = {};
-  const getEmblem = async (pid) => (emblemCache[pid] ??= await emblemImg(playersById[pid]?.emblem));
-  for (let i = 0; i < cells.length; i++) {
-    const { item, photo, by } = cells[i];
-    const x = PAD + inner + (i % n) * (cell + gap);
-    const yy = y + inner + Math.floor(i / n) * (cell + gap);
-    const img = photo ? await loadImg(thumbs[photo]?.thumb) : null;
-    ctx.save();
-    roundRect(ctx, x, yy, cell, cell, 10); ctx.clip();
-    if (img) {
-      ctx.drawImage(img, x, yy, cell, cell);
-      const g = ctx.createLinearGradient(0, yy + cell * 0.55, 0, yy + cell);
-      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.75)');
-      ctx.fillStyle = g; ctx.fillRect(x, yy + cell * 0.55, cell, cell * 0.45);
-      ctx.font = `800 ${Math.max(12, cell * 0.095)}px ${BODY}`; ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
-      ctx.fillText(wrapLines(ctx, item.text, cell - 12, 1)[0], x + cell / 2, yy + cell - cell * 0.07);
-    } else {
-      ctx.fillStyle = CAT_COLORS[item.cat] || '#fff'; ctx.fillRect(x, yy, cell, cell);
-      halftone(ctx, x, yy, cell, cell, 'rgba(0,0,0,0.12)', 9, 1.4);
-      ctx.globalAlpha = photo === undefined && item.tier !== 'free' ? 0.55 : 1;
-      ctx.font = `${cell * 0.34}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = INK;
-      ctx.fillText(item.icon, x + cell / 2, yy + cell * 0.36);
-      ctx.textBaseline = 'alphabetic';
-      const fs = item.tier === 'free' ? cell * 0.15 : Math.max(11, cell * 0.1);
-      ctx.font = item.tier === 'free' ? `${fs}px ${DISPLAY}` : `800 ${fs}px ${BODY}`;
-      const lines = wrapLines(ctx, item.text, cell - 14, 3);
-      lines.forEach((l, k) => ctx.fillText(l, x + cell / 2, yy + cell * 0.66 + k * fs * 1.1));
-      ctx.globalAlpha = 1;
-    }
-    ctx.restore();
-    if (img && by) {
-      const em = await getEmblem(by);
-      const es = Math.max(26, cell * 0.24);
-      if (em) ctx.drawImage(em, x + 6, yy + 6, es, es);
-      if (!isBingo) {
-        ctx.lineWidth = Math.max(5, cell * 0.05);
-        ctx.strokeStyle = emblemById(playersById[by]?.emblem).c1;
-        roundRect(ctx, x + ctx.lineWidth / 2, yy + ctx.lineWidth / 2, cell - ctx.lineWidth, cell - ctx.lineWidth, 9); ctx.stroke();
-      }
-    }
-    if (highlight.has(i)) {
-      ctx.lineWidth = 7; ctx.strokeStyle = YELLOW;
-      roundRect(ctx, x - 2, yy - 2, cell + 4, cell + 4, 12); ctx.stroke();
-    }
-  }
+  await drawBoard(ctx, { x: PAD, y, w: boardW, n, cells, highlight, versus: !isBingo, thumbs, getEmblem, playersById });
   y += H_BOARD + 40;
+
+  // everyone else's boards (bingo)
+  if (others.length) {
+    ctx.font = `900 34px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'left';
+    ctx.fillText(others.length === 1 ? 'THE OTHER CARD' : 'THE OTHER CARDS', PAD, y + 40);
+    y += 70;
+    for (let k = 0; k < others.length; k++) {
+      const { b, s } = others[k];
+      const lone = others.length % 2 === 1 && k === others.length - 1;
+      const x = lone ? PAD + (boardW - colW) / 2 : PAD + (k % 2) * (colW + colGap);
+      const yy = y + Math.floor(k / 2) * (H_MINI_HEAD + colW + 36);
+      const em = await getEmblem(b.playerId);
+      if (em) ctx.drawImage(em, x, yy + 6, 52, 52);
+      ctx.font = `900 34px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'left';
+      ctx.fillText(wrapLines(ctx, playersById[b.playerId]?.name || 'Someone', colW - 70, 1)[0], x + 64, yy + 34);
+      ctx.font = `700 24px ${BODY}`; ctx.fillStyle = '#6b6255';
+      ctx.fillText(`${plural(s.found, 'find')} · ${plural(s.lines, 'line')}`, x + 64, yy + 62);
+      await drawBoard(ctx, { x, y: yy + H_MINI_HEAD, w: colW, n, cells: boardCells(b), highlight: s.lineCells, thumbs, getEmblem, playersById });
+    }
+    y += Math.ceil(others.length / 2) * (H_MINI_HEAD + colW + 36) + 10;
+  }
 
   // scoreboard
   panel(ctx, PAD, y, boardW, H_SCORES - 20, '#ffffff');
@@ -267,7 +290,7 @@ export async function renderRecap({ game, boards = [], thumbs, playersById }) {
     const { pid, stats } = rows[k];
     const p = playersById[pid];
     const em = await getEmblem(pid);
-    ctx.font = `${44}px ${DISPLAY}`; ctx.fillStyle = k === 0 ? RED : INK; ctx.textAlign = 'left';
+    ctx.font = `44px ${DISPLAY}`; ctx.fillStyle = k === 0 ? RED : INK; ctx.textAlign = 'left';
     ctx.fillText(`${k + 1}`, PAD + 30, ry + 58);
     if (em) ctx.drawImage(em, PAD + 76, ry + 10, 68, 68);
     ctx.font = `900 40px ${BODY}`; ctx.fillStyle = INK;
@@ -280,32 +303,10 @@ export async function renderRecap({ game, boards = [], thumbs, playersById }) {
     }
     ry += H_ROW;
   }
-  y += H_SCORES;
-
-  // photo strip
-  if (extra.length) {
-    y += 10;
-    ctx.font = `900 34px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'left';
-    ctx.fillText('MORE FINDS', PAD, y + 40);
-    y += 64;
-    for (let k = 0; k < extra.length; k++) {
-      const x = PAD + (k % stripCols) * (stripCell + 14);
-      const yy = y + Math.floor(k / stripCols) * (stripCell + 14);
-      const img = await loadImg(thumbs[extra[k].photo]?.thumb);
-      ctx.fillStyle = INK; roundRect(ctx, x + 5, yy + 5, stripCell, stripCell, 12); ctx.fill();
-      ctx.save(); roundRect(ctx, x, yy, stripCell, stripCell, 12); ctx.clip();
-      if (img) ctx.drawImage(img, x, yy, stripCell, stripCell);
-      ctx.restore();
-      ctx.lineWidth = 4; ctx.strokeStyle = INK; roundRect(ctx, x, yy, stripCell, stripCell, 12); ctx.stroke();
-      const em = await getEmblem(extra[k].by);
-      if (em) ctx.drawImage(em, x + 6, yy + 6, 40, 40);
-    }
-    y += Math.ceil(extra.length / stripCols) * (stripCell + 14) + 16;
-  }
 
   // footer
   ctx.font = `900 30px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'center';
-  ctx.fillText(`📸 ${totalPhotos} photo${totalPhotos === 1 ? '' : 's'} snapped · ${game.players.length} hunter${game.players.length === 1 ? '' : 's'} · Game ${game.code}`, W / 2, H - 58);
+  ctx.fillText(`📸 ${plural(totalPhotos, 'photo')} snapped · ${plural(game.players.length, 'hunter')} · Game ${game.code}`, W / 2, H - 58);
 
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
 }

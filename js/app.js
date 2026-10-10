@@ -532,8 +532,8 @@ function ItemsScreen({ bank }) {
 
 const TIER_STARS = { e: '★', m: '★★', h: '★★★', free: '' };
 
-function Tile({ item, thumb, stamp, win, swapTarget, claimColor, onClick }) {
-  const cls = ['tile', `cat-${item.cat}`, `tier-${item.tier}`, thumb && 'done', win && 'win', swapTarget && 'swap-target']
+function Tile({ item, thumb, found, stamp, win, swapTarget, claimColor, onClick }) {
+  const cls = ['tile', `cat-${item.cat}`, `tier-${item.tier}`, thumb && 'done', found && !thumb && 'found', win && 'win', swapTarget && 'swap-target']
     .filter(Boolean).join(' ');
   return html`
     <button class=${cls} onClick=${onClick} style=${claimColor ? `--claim:${claimColor}` : ''}>
@@ -544,7 +544,9 @@ function Tile({ item, thumb, stamp, win, swapTarget, claimColor, onClick }) {
       ` : html`
         <span class="icon">${item.icon}</span>
         <span class="txt">${item.text}</span>
-        ${TIER_STARS[item.tier] && html`<span class="stars">${TIER_STARS[item.tier]}</span>`}
+        ${TIER_STARS[item.tier] && !found && html`<span class="stars">${TIER_STARS[item.tier]}</span>`}
+        ${found && html`<span class="check">✓</span>`}
+        ${found && stamp && html`<span class="stamp"><${Emblem} id=${stamp} size=${22} /></span>`}
       `}
     </button>`;
 }
@@ -572,7 +574,7 @@ function BackupTray({ backups, swapIdx, setSwapIdx, canUse }) {
     </section>`;
 }
 
-function PhotoButtons({ onFile, label = 'Take photo' }) {
+function PhotoButtons({ onFile, onNoPhoto, label = 'Take photo' }) {
   const handle = (e) => {
     const f = e.target.files?.[0];
     e.target.value = '';
@@ -584,10 +586,11 @@ function PhotoButtons({ onFile, label = 'Take photo' }) {
         <input type="file" accept="image/*" capture="user" onChange=${handle} hidden /></label>
       <label class="btn ghost">🖼️ Choose from library
         <input type="file" accept="image/*" onChange=${handle} hidden /></label>
+      ${onNoPhoto && html`<button class="btn ghost" onClick=${onNoPhoto}>✅ Found it, no photo</button>`}
     </div>`;
 }
 
-function SquareModal({ item, photoId, thumb, by, at, canAct, actionLabel, onFile, onRemove, removeLabel, onEdit, onClose, note }) {
+function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel, onFile, onNoPhoto, onRemove, removeLabel, onEdit, onClose, note }) {
   const [full, setFull] = useState(null);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -623,10 +626,12 @@ function SquareModal({ item, photoId, thumb, by, at, canAct, actionLabel, onFile
             ${by && html`<figcaption><${Emblem} id=${by.emblem} size=${22} /> ${by.name}
               ${at && html`<span class="muted"> · ${new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>`}</figcaption>`}
           </figure>`}
+        ${found && !photoId && html`<p class="found-note">✅ Found${by ? html` by <${Emblem} id=${by.emblem} size=${22} /> ${by.name}` : ''}, no photo
+          ${at && html`<span class="muted"> · ${new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>`}</p>`}
         ${note && html`<p class="muted center">${note}</p>`}
         ${editing ? html`<${ItemForm} initial=${item} submitLabel="Save square" compact
             onSubmit=${(it) => { onEdit(it); setEditing(false); }} onCancel=${() => setEditing(false)} />`
-          : canAct && html`<${PhotoButtons} label=${actionLabel} onFile=${wrap(onFile)} />`}
+          : canAct && html`<${PhotoButtons} label=${actionLabel} onFile=${wrap(onFile)} onNoPhoto=${onNoPhoto && wrap(onNoPhoto)} />`}
         ${onEdit && !editing && html`<button class="btn small ghost" onClick=${() => setEditing(true)}>✏️ Edit square</button>`}
         ${onRemove && html`<button class="btn small danger" onClick=${wrap(onRemove)}>${removeLabel || 'Remove photo'}</button>`}
         ${busy && html`<div class="busy"><div class="spinner"></div>Uploading…</div>`}
@@ -833,7 +838,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
   const markSquare = async (file) => {
     const i = open;
-    const photo = await uploadPhoto(file, game.code, me.id);
+    const photo = file ? await uploadPhoto(file, game.code, me.id) : null;
     const mark = { photo, at: Date.now() };
     store.patch('boards', boardId(board), { [`marks.${i}`]: mark }).catch((e) => toast(e.message, 'error'));
     setOpen(null);
@@ -847,7 +852,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         return { ...g, winner: me.id, wonAt: Date.now() };
       }).catch(() => {});
     } else if (after.lines > before.lines) toast('LINE! 💥', 'good');
-    else toast('Got it! 📸', 'good');
+    else toast(photo ? 'Got it! 📸' : 'Got it! ✅', 'good');
   };
 
   const editSquare = (it) => {
@@ -883,7 +888,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         return html`<button class="score ${viewing === b.playerId ? 'sel' : ''}" key=${b.playerId} onClick=${() => { setViewing(b.playerId); setSwapIdx(null); }}>
           <${Emblem} id=${p?.emblem} size=${34} />
           <span class="nm">${b.playerId === me.id ? 'You' : firstName(p)}${winnerId === b.playerId ? ' 🏆' : ''}</span>
-          <span class="pts">${s.found} 📸 · ${s.lines} line${s.lines === 1 ? '' : 's'}${game.winRule === 'most' ? ` · ${s.points}pt` : ''}</span>
+          <span class="pts">${s.found} found ·${s.lines} line${s.lines === 1 ? '' : 's'}${game.winRule === 'most' ? ` · ${s.points}pt` : ''}</span>
         </button>`;
       })}
     </div>
@@ -893,7 +898,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       <${Board} size=${game.size}>
         ${board.items.map((item, i) => {
           const m = board.marks?.[i];
-          return html`<${Tile} key=${i} item=${item} thumb=${m && (thumbs[m.photo]?.thumb || PLACEHOLDER)}
+          return html`<${Tile} key=${i} item=${item} thumb=${m?.photo && (thumbs[m.photo]?.thumb || PLACEHOLDER)} found=${!!m}
             stamp=${m && playersById[board.playerId]?.emblem} win=${score.lineCells.has(i)}
             swapTarget=${swapIdx !== null && canEdit && !m && item.tier !== 'free'} onClick=${() => tapSquare(i)} />`;
         })}
@@ -903,11 +908,11 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
     ${open !== null && board && html`<${SquareModal}
       item=${board.items[open]}
-      photoId=${openMark?.photo} thumb=${openMark && thumbs[openMark.photo]?.thumb}
+      photoId=${openMark?.photo} found=${!!openMark} thumb=${openMark?.photo && thumbs[openMark.photo]?.thumb}
       by=${openMark && playersById[board.playerId]} at=${openMark?.at}
-      canAct=${canEdit} actionLabel=${openMark ? 'Retake photo' : 'Take photo'}
-      onFile=${markSquare}
-      onRemove=${canEdit && openMark ? unmark : null}
+      canAct=${canEdit} actionLabel=${openMark?.photo ? 'Retake photo' : openMark ? 'Add a photo' : 'Take photo'}
+      onFile=${markSquare} onNoPhoto=${!openMark ? () => markSquare(null) : null}
+      onRemove=${canEdit && openMark ? unmark : null} removeLabel=${openMark?.photo ? 'Remove photo' : 'Unmark square'}
       onEdit=${canEdit && !openMark ? editSquare : null}
       note=${!openMark && !canEdit ? (timeUp ? "Time's up!" : 'Not found yet.') : null}
       onClose=${() => setOpen(null)} />`}
@@ -952,7 +957,18 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
   const claim = async (file) => {
     const i = open;
-    const photo = await uploadPhoto(file, game.code, me.id);
+    const photo = file ? await uploadPhoto(file, game.code, me.id) : null;
+    const existing = game.claims?.[i];
+    if (existing?.by === me.id) {
+      // Adding a photo to a square you already claimed without one.
+      await store.transact('games', game.code, (g) => {
+        if (!g || g.claims?.[i]?.by !== me.id) return undefined;
+        g.claims = { ...g.claims, [i]: { ...g.claims[i], photo } };
+        return g;
+      });
+      setOpen(null);
+      return toast('Photo added 📸', 'good');
+    }
     let res;
     try {
       res = await store.transact('games', game.code, (g) => {
@@ -1028,7 +1044,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       ${game.items.map((item, i) => {
         const c = game.claims?.[i];
         const p = c && playersById[c.by];
-        return html`<${Tile} key=${i} item=${item} thumb=${c && (thumbs[c.photo]?.thumb || PLACEHOLDER)}
+        return html`<${Tile} key=${i} item=${item} thumb=${c?.photo && (thumbs[c.photo]?.thumb || PLACEHOLDER)} found=${!!c}
           stamp=${p?.emblem} claimColor=${p && playerColor(p)} win=${winCells.has(i)}
           swapTarget=${swapIdx !== null && !c} onClick=${() => tapSquare(i)} />`;
       })}
@@ -1038,10 +1054,11 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
     ${open !== null && html`<${SquareModal}
       item=${game.items[open]}
-      photoId=${openClaim?.photo} thumb=${openClaim && thumbs[openClaim.photo]?.thumb}
+      photoId=${openClaim?.photo} found=${!!openClaim} thumb=${openClaim?.photo && thumbs[openClaim.photo]?.thumb}
       by=${openClaim && playersById[openClaim.by]} at=${openClaim?.at}
-      canAct=${isPlayer && !over && !openClaim} actionLabel="Snap it to claim"
-      onFile=${claim}
+      canAct=${isPlayer && (openClaim ? openClaim.by === me.id && !openClaim.photo : !over)}
+      actionLabel=${openClaim ? 'Add a photo' : 'Snap it to claim'}
+      onFile=${claim} onNoPhoto=${!openClaim ? () => claim(null) : null}
       onRemove=${openClaim?.by === me.id && !over ? unclaim : null} removeLabel="Undo my claim"
       onEdit=${isPlayer && !over && !openClaim ? editSquare : null}
       note=${!openClaim && over ? 'Game over.' : !openClaim && !isPlayer ? 'Join the game to claim squares.' : null}
