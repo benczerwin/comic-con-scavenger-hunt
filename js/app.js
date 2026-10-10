@@ -921,6 +921,7 @@ function CameraView({ onFile, onClose, onFallback }) {
   const [facing, setFacing] = useState(useContext(CameraFacing));
   const [wide, setWide] = useState(() => loadPref(WIDE_KEY, '1') === '1');
   const [save, setSave] = useState(() => loadPref(SAVE_KEY, '1') === '1');
+  useScrollLock();
   const [shot, setShot] = useState(null); // { url, blob }
   const [error, setError] = useState(null);
   const [ready, setReady] = useState(false);
