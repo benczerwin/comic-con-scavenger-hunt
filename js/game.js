@@ -34,12 +34,6 @@ function shuffle(arr) {
 
 const strip = ({ tier, icon, text, cat }) => ({ tier, icon, text, cat });
 
-/** Up to n distinct random items of the same tier as `item` (for picking a swap). */
-export function rerollOptions(item, { exclude = [], pool = ITEMS, n = 3 }) {
-  const skip = new Set([...exclude, item.text]);
-  return shuffle(pool.filter((it) => it.tier === item.tier && !skip.has(it.text))).slice(0, n).map(strip);
-}
-
 /** A random item of the same tier as `item`, skipping anything in `exclude` (texts). Null if none left. */
 export function rerollItem(item, { exclude = [], pool = ITEMS }) {
   const skip = new Set([...exclude, item.text]);
