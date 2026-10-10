@@ -4,7 +4,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /{collection}/{id} {
-      allow read, write: if collection in ['players', 'games', 'boards', 'thumbs', 'photos']
+      allow read, write: if collection in ['players', 'games', 'boards', 'thumbs', 'photos', 'settings']
         && request.time < timestamp.date(2027, 1, 31);
     }
   }

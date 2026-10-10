@@ -35,7 +35,7 @@ function shuffle(arr) {
 const strip = ({ tier, icon, text, cat }) => ({ tier, icon, text, cat });
 
 /** Build a card: n*n squares (center FREE if requested & odd) + backups. */
-export function generateCard({ size, difficulty = 'balanced', freeCenter = false, exclude = [] }) {
+export function generateCard({ size, difficulty = 'balanced', freeCenter = false, exclude = [], pool = ITEMS }) {
   const mix = DIFFICULTY[difficulty] || DIFFICULTY.balanced;
   const hasFree = freeCenter && size % 2 === 1;
   const total = size * size - (hasFree ? 1 : 0);
@@ -43,7 +43,7 @@ export function generateCard({ size, difficulty = 'balanced', freeCenter = false
 
   const skip = new Set(exclude);
   const pools = { e: [], m: [], h: [] };
-  for (const it of shuffle(ITEMS)) if (!skip.has(it.text)) pools[it.tier].push(it);
+  for (const it of shuffle(pool)) if (!skip.has(it.text)) pools[it.tier].push(it);
 
   const want = { h: Math.round(total * mix.h), m: Math.round(total * mix.m) };
   want.e = total - want.h - want.m;
@@ -66,6 +66,12 @@ export function generateCard({ size, difficulty = 'balanced', freeCenter = false
   const backups = backupPool.slice(0, nBackups).map(strip);
 
   return { items: squares, backups };
+}
+
+/** Items games draw from: built-ins minus disabled ones, plus custom items. bank = settings/itemBank doc. */
+export function buildPool(bank) {
+  const off = new Set(bank?.disabled || []);
+  return [...ITEMS, ...(bank?.custom || [])].filter((it) => !off.has(it.text));
 }
 
 /** Every straight run of length k (rows, cols, both diagonals) in an n×n grid. */

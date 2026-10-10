@@ -1,9 +1,10 @@
 // Backend facade. Uses Firestore when configured, otherwise a localStorage demo backend.
 // API (both backends):
 //   watchDoc(col, id, cb) / watchWhere(col, field, op, value, cb) / watchAll(col, cb) -> unsubscribe
-//   getOne(col, id) -> data|null
+//   getOne(col, id) -> data|null / getWhere(col, field, op, value) -> rows (one-time)
 //   put(col, id, data)                 full write (works offline, queued)
 //   patch(col, id, changes)            dotted-key partial update; use DELETE to remove a field
+//   remove(col, id)
 //   transact(col, id, fn)              fn(current|null) -> new full doc, or undefined to abort
 import { firebaseConfig } from './firebase-config.js';
 
@@ -17,4 +18,4 @@ export const backend = configured && !forceLocal
   : await import('./store-local.js');
 
 export const isLive = backend.isLive;
-export const { watchDoc, watchWhere, watchAll, getOne, put, patch, transact } = backend;
+export const { watchDoc, watchWhere, watchAll, getOne, getWhere, put, patch, transact, remove } = backend;

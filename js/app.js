@@ -66,6 +66,10 @@ const firstName = (p) => (p?.name || 'Someone').split(' ')[0];
 
 // ───────────────────────── game creation ─────────────────────────
 
+// Current item pool (built-ins minus disabled + custom). Kept in sync with settings/itemBank by <App>.
+let itemPool = ITEMS;
+const BANK_ID = 'itemBank';
+
 async function uniqueCode() {
   for (let i = 0; i < 8; i++) {
     const code = G.makeCode();
@@ -75,7 +79,7 @@ async function uniqueCode() {
 }
 
 function makeBoard(game, pid) {
-  const card = game.card || G.generateCard({ size: game.size, difficulty: game.difficulty, freeCenter: game.freeCenter });
+  const card = game.card || G.generateCard({ size: game.size, difficulty: game.difficulty, freeCenter: game.freeCenter, pool: itemPool });
   return {
     gameId: game.code, playerId: pid, size: game.size,
     items: card.items, backups: card.backups, marks: {}, createdAt: Date.now(),
@@ -83,7 +87,7 @@ function makeBoard(game, pid) {
 }
 
 function versusBackups(game) {
-  return G.generateCard({ size: game.size, difficulty: game.difficulty, exclude: game.items.map((i) => i.text) }).backups;
+  return G.generateCard({ size: game.size, difficulty: game.difficulty, exclude: game.items.map((i) => i.text), pool: itemPool }).backups;
 }
 
 async function createGame(settings, createdBy) {
@@ -102,18 +106,43 @@ async function createGame(settings, createdBy) {
       freeCenter: settings.freeCenter,
       sameCard: settings.sameCard,
       card: settings.sameCard
-        ? G.generateCard({ size: settings.size, difficulty: settings.difficulty, freeCenter: settings.freeCenter })
+        ? G.generateCard({ size: settings.size, difficulty: settings.difficulty, freeCenter: settings.freeCenter, pool: itemPool })
         : null,
     };
     store.put('games', code, game).catch(fail);
     for (const pid of game.players) store.put('boards', `${code}_${pid}`, makeBoard(game, pid)).catch(fail);
   } else {
-    const card = G.generateCard({ size: settings.size, difficulty: settings.difficulty });
+    const card = G.generateCard({ size: settings.size, difficulty: settings.difficulty, pool: itemPool });
     const game = { ...base, connect: settings.connect, items: card.items, claims: {}, backups: {} };
     for (const pid of game.players) game.backups[pid] = versusBackups(game);
     store.put('games', code, game).catch(fail);
   }
   return code;
+}
+
+/** Deletes a game plus its boards and photos. */
+async function deleteGame(code) {
+  const [boards, thumbs] = await Promise.all([
+    store.getWhere('boards', 'gameId', '==', code),
+    store.getWhere('thumbs', 'gameId', '==', code),
+  ]);
+  await store.remove('games', code);
+  await Promise.all([
+    ...boards.map((b) => store.remove('boards', b.id)),
+    ...thumbs.flatMap((t) => [store.remove('thumbs', t.id), store.remove('photos', t.id)]),
+  ]);
+}
+
+async function confirmDelete(code) {
+  if (!confirm(`Delete game ${code} and all its photos for everyone? This can't be undone.`)) return false;
+  try {
+    await deleteGame(code);
+    toast(`Deleted game ${code}`);
+    return true;
+  } catch (e) {
+    toast(`Couldn't delete: ${e.message}`, 'error');
+    return false;
+  }
 }
 
 const settingsFrom = (g) => ({
@@ -224,7 +253,8 @@ function Home({ me, playersById }) {
           ${sorted.map((g) => {
             const winner = g.winner && playersById[g.winner];
             return html`
-              <a class="game-row" href="#/g/${g.code}" key=${g.code}>
+              <div class="game-row-wrap" key=${g.code}>
+              <a class="game-row" href="#/g/${g.code}">
                 <span class="tag ${g.mode}">${g.mode === 'bingo' ? 'BINGO' : 'VS'}</span>
                 <span class="grow">
                   <b>${g.code}</b> · ${g.size}×${g.size}
@@ -233,10 +263,18 @@ function Home({ me, playersById }) {
                     ${winner ? ` · 🏆 ${winner.name}` : g.winner === 'draw' ? ' · Draw' : ''}</small>
                 </span>
                 <span class="stack">${g.players.slice(0, 5).map((pid) => html`<${Emblem} id=${playersById[pid]?.emblem} size=${26} />`)}</span>
-              </a>`;
+              </a>
+              <button class="del" aria-label="Delete game ${g.code}" onClick=${() => confirmDelete(g.code)}>🗑️</button>
+              </div>`;
           })}
         </div>
       </section>
+
+      <a class="panel items-link" href="#/items">
+        <span class="icon">📝</span>
+        <span class="grow"><b>Edit hunt items</b><small>${itemPool.length} items on · turn ideas off or add your own</small></span>
+        <span>›</span>
+      </a>
 
       <details class="panel how">
         <summary>How to play</summary>
@@ -246,7 +284,7 @@ function Home({ me, playersById }) {
           <li><b>Backups:</b> you get 1–3 backup items (based on board size). Tap a backup, then tap any unmarked square to swap it in.</li>
           <li><b>Easy squares</b> are thematic (tails, wings, horns…). ★★★ squares are the rare finds.</li>
           <li>Share the game code or link with your crew. Anyone can join mid-game.</li>
-          <li>${ITEMS.length} ideas in the hunt pool.</li>
+          <li>Don't like an item? Turn it off in <b>Edit hunt items</b>, or tap an unmarked square in a game and choose <b>Edit square</b>.</li>
         </ul>
       </details>
     </main>`;
@@ -292,6 +330,7 @@ function NewGame({ mode, me, players }) {
   };
 
   const nb = G.backupsFor(size);
+  const tooFew = itemPool.length < size * size + nb;
   return html`
     <main class="screen">
       <nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>
@@ -339,7 +378,131 @@ function NewGame({ mode, me, players }) {
         <p class="muted small">Not listed? They can join anytime with the game code.</p>
       </section>
 
-      <button class="btn primary huge" disabled=${busy} onClick=${create}>${busy ? 'Creating…' : 'Start the hunt!'}</button>
+      <p class="muted small center">Drawing from <b>${itemPool.length}</b> hunt items · <a href="#/items">edit list</a></p>
+      ${tooFew && html`<div class="banner warn">Not enough items turned on for a ${size}×${size} board. Turn more on in the item list.</div>`}
+      <button class="btn primary huge" disabled=${busy || tooFew} onClick=${create}>${busy ? 'Creating…' : 'Start the hunt!'}</button>
+    </main>`;
+}
+
+// ───────────────────────── item list editor ─────────────────────────
+
+const TIER_LABELS = { e: 'Easy', m: 'Medium', h: 'Hard' };
+
+function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compact }) {
+  const [icon, setIcon] = useState(initial?.icon || '');
+  const [text, setText] = useState(initial?.text || '');
+  const [tier, setTier] = useState(initial?.tier && initial.tier !== 'free' ? initial.tier : 'e');
+  const [cat, setCat] = useState(initial?.cat && initial.cat !== 'free' ? initial.cat : 'theme');
+
+  const submit = (e) => {
+    e.preventDefault();
+    const t = text.trim();
+    if (!t) return toast('Describe what to find.', 'error');
+    onSubmit({ icon: icon.trim() || '📸', text: t.slice(0, 80), tier, cat });
+    if (!initial) { setIcon(''); setText(''); }
+  };
+
+  return html`
+    <form class="item-form ${compact ? 'compact' : ''}" onSubmit=${submit}>
+      <div class="row">
+        <input class="text emoji" placeholder="🙂" value=${icon} maxlength="8" aria-label="Emoji"
+          onInput=${(e) => setIcon(e.target.value)} />
+        <input class="text grow" placeholder="What to find, e.g. Someone with a tail" value=${text} maxlength="80"
+          onInput=${(e) => setText(e.target.value)} />
+      </div>
+      <${Choice} value=${tier} onChange=${setTier} options=${Object.entries(TIER_LABELS).map(([k, l]) => [k, l, TIER_STARS[k]])} />
+      <select class="text" value=${cat} onChange=${(e) => setCat(e.target.value)} aria-label="Category">
+        ${Object.entries(CATEGORY_LABELS).map(([k, l]) => html`<option value=${k}>${l}</option>`)}
+      </select>
+      <div class="row end">
+        ${onCancel && html`<button type="button" class="btn ghost small" onClick=${onCancel}>Cancel</button>`}
+        <button class="btn primary small">${submitLabel}</button>
+      </div>
+    </form>`;
+}
+
+function ItemsScreen({ bank }) {
+  const [q, setQ] = useState('');
+  const [tier, setTier] = useState('all');
+  const [show, setShow] = useState('all'); // all | on | off | custom
+  const disabled = new Set(bank?.disabled || []);
+  const custom = bank?.custom || [];
+  const all = [...custom.map((c) => ({ ...c, custom: true })), ...ITEMS];
+
+  const save = (next) => store.put('settings', BANK_ID, {
+    disabled: bank?.disabled || [], custom, ...next, updatedAt: Date.now(),
+  }).catch((e) => toast(`Sync problem: ${e.message}`, 'error'));
+
+  const toggle = (text) => {
+    const d = new Set(disabled);
+    d.has(text) ? d.delete(text) : d.add(text);
+    save({ disabled: [...d] });
+  };
+  const add = (it) => {
+    if (all.some((x) => x.text.toLowerCase() === it.text.toLowerCase())) return toast('That item already exists.', 'error');
+    save({ custom: [it, ...custom] });
+    toast(`Added: ${it.text}`, 'good');
+  };
+  const removeCustom = (text) => {
+    if (!confirm(`Delete "${text}"?`)) return;
+    save({ custom: custom.filter((c) => c.text !== text), disabled: [...disabled].filter((t) => t !== text) });
+  };
+  const setAll = (on) => {
+    const visibleTexts = filtered.map((i) => i.text);
+    const d = new Set(disabled);
+    for (const t of visibleTexts) on ? d.delete(t) : d.add(t);
+    save({ disabled: [...d] });
+  };
+
+  const needle = q.trim().toLowerCase();
+  const filtered = all.filter((it) =>
+    (tier === 'all' || it.tier === tier) &&
+    (show === 'all' || (show === 'on' && !disabled.has(it.text)) || (show === 'off' && disabled.has(it.text)) || (show === 'custom' && it.custom)) &&
+    (!needle || it.text.toLowerCase().includes(needle)));
+  const byCat = Object.keys(CATEGORY_LABELS).map((cat) => [cat, filtered.filter((i) => i.cat === cat)]).filter(([, xs]) => xs.length);
+  const onCount = all.filter((i) => !disabled.has(i.text)).length;
+
+  return html`
+    <main class="screen">
+      <nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>
+      <h1 class="title">Hunt items</h1>
+      <p class="muted">${onCount} of ${all.length} items on. New games draw only from items that are on. Changes are shared with everyone.</p>
+
+      <section class="panel">
+        <h2>Add your own</h2>
+        <${ItemForm} onSubmit=${add} />
+      </section>
+
+      <section class="panel sticky-filters">
+        <input class="text" type="search" placeholder="Search items…" value=${q} onInput=${(e) => setQ(e.target.value)} />
+        <div class="filter-row">
+          ${[['all', 'All'], ['e', '★'], ['m', '★★'], ['h', '★★★']].map(([k, l]) => html`
+            <button class="pill ${tier === k ? 'sel' : ''}" onClick=${() => setTier(k)}>${l}</button>`)}
+          <span class="sep"></span>
+          ${[['all', 'Any'], ['on', 'On'], ['off', 'Off'], ['custom', 'Mine']].map(([k, l]) => html`
+            <button class="pill ${show === k ? 'sel' : ''}" onClick=${() => setShow(k)}>${l}</button>`)}
+        </div>
+        <div class="row small">
+          <span class="grow muted">${filtered.length} shown</span>
+          <button class="btn small ghost" onClick=${() => setAll(true)}>All on</button>
+          <button class="btn small ghost" onClick=${() => setAll(false)}>All off</button>
+        </div>
+      </section>
+
+      ${byCat.map(([cat, items]) => html`
+        <section class="panel item-group" key=${cat}>
+          <h2><span class="dot cat-${cat}"></span>${CATEGORY_LABELS[cat]} <small class="muted">${items.length}</small></h2>
+          ${items.map((it) => {
+            const on = !disabled.has(it.text);
+            return html`<div class="item-row ${on ? '' : 'off'}" key=${it.text}>
+              <span class="icon">${it.icon}</span>
+              <span class="grow">${it.text}${it.custom && html` <i class="badge">mine</i>`}<small class="stars">${TIER_STARS[it.tier]}</small></span>
+              ${it.custom && html`<button class="del" aria-label="Delete item" onClick=${() => removeCustom(it.text)}>🗑️</button>`}
+              <label class="switch"><input type="checkbox" checked=${on} onChange=${() => toggle(it.text)} /><span></span></label>
+            </div>`;
+          })}
+        </section>`)}
+      ${!filtered.length && html`<p class="muted center">No items match.</p>`}
     </main>`;
 }
 
@@ -402,8 +565,9 @@ function PhotoButtons({ onFile, label = 'Take photo' }) {
     </div>`;
 }
 
-function SquareModal({ item, photoId, thumb, by, at, canAct, actionLabel, onFile, onRemove, removeLabel, onClose, note }) {
+function SquareModal({ item, photoId, thumb, by, at, canAct, actionLabel, onFile, onRemove, removeLabel, onEdit, onClose, note }) {
   const [full, setFull] = useState(null);
+  const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -438,7 +602,10 @@ function SquareModal({ item, photoId, thumb, by, at, canAct, actionLabel, onFile
               ${at && html`<span class="muted"> · ${new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>`}</figcaption>`}
           </figure>`}
         ${note && html`<p class="muted center">${note}</p>`}
-        ${canAct && html`<${PhotoButtons} label=${actionLabel} onFile=${wrap(onFile)} />`}
+        ${editing ? html`<${ItemForm} initial=${item} submitLabel="Save square" compact
+            onSubmit=${(it) => { onEdit(it); setEditing(false); }} onCancel=${() => setEditing(false)} />`
+          : canAct && html`<${PhotoButtons} label=${actionLabel} onFile=${wrap(onFile)} />`}
+        ${onEdit && !editing && html`<button class="btn small ghost" onClick=${() => setEditing(true)}>✏️ Edit square</button>`}
         ${onRemove && html`<button class="btn small danger" onClick=${wrap(onRemove)}>${removeLabel || 'Remove photo'}</button>`}
         ${busy && html`<div class="busy"><div class="spinner"></div>Uploading…</div>`}
       </div>
@@ -533,6 +700,9 @@ function GameScreen({ code, me, playersById }) {
         <div class="banner join-banner">You're watching this game.
           <button class="btn primary small" disabled=${joining} onClick=${join}>${joining ? 'Joining…' : 'Join game'}</button></div>`}
       <${Screen} game=${game} me=${me} playersById=${playersById} thumbs=${thumbs} isPlayer=${isPlayer} onRematch=${rematch} />
+      <div class="game-footer">
+        <button class="btn small danger" onClick=${async () => { if (await confirmDelete(code)) go('/'); }}>🗑️ Delete game</button>
+      </div>
     </main>`;
 }
 
@@ -613,6 +783,13 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     else toast('Got it! 📸', 'good');
   };
 
+  const editSquare = (it) => {
+    const items = board.items.slice();
+    items[open] = it;
+    store.patch('boards', boardId(board), { items }).catch((e) => toast(e.message, 'error'));
+    toast('Square updated');
+  };
+
   const unmark = async () => {
     store.patch('boards', boardId(board), { [`marks.${open}`]: store.DELETE }).catch((e) => toast(e.message, 'error'));
     setOpen(null);
@@ -664,6 +841,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       canAct=${canEdit} actionLabel=${openMark ? 'Retake photo' : 'Take photo'}
       onFile=${markSquare}
       onRemove=${canEdit && openMark ? unmark : null}
+      onEdit=${canEdit && !openMark ? editSquare : null}
       note=${!openMark && !canEdit ? (timeUp ? "Time's up!" : 'Not found yet.') : null}
       onClose=${() => setOpen(null)} />`}
   `;
@@ -734,6 +912,18 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     } else if (res.data.winner !== me.id) toast('Claimed! 🚩', 'good');
   };
 
+  const editSquare = async (it) => {
+    const i = open;
+    try {
+      const res = await store.transact('games', game.code, (g) => {
+        if (!g || g.claims?.[i] || g.winner) return undefined;
+        g.items[i] = it;
+        return g;
+      });
+      toast(res.ok ? 'Square updated' : 'Someone already claimed it!', res.ok ? 'info' : 'error');
+    } catch (e) { toast(`Editing needs a connection: ${e.message}`, 'error'); }
+  };
+
   const unclaim = async () => {
     const i = open;
     await store.transact('games', game.code, (g) => {
@@ -786,6 +976,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       canAct=${isPlayer && !over && !openClaim} actionLabel="Snap it to claim"
       onFile=${claim}
       onRemove=${openClaim?.by === me.id && !over ? unclaim : null} removeLabel="Undo my claim"
+      onEdit=${isPlayer && !over && !openClaim ? editSquare : null}
       note=${!openClaim && over ? 'Game over.' : !openClaim && !isPlayer ? 'Join the game to claim squares.' : null}
       onClose=${() => setOpen(null)} />`}
   `;
@@ -799,12 +990,15 @@ function App() {
   const [meId, setMeId] = useState(loadMe);
   const playersById = useMemo(() => Object.fromEntries((players || []).map((p) => [p.id, p])), [players]);
   const me = meId ? playersById[meId] : null;
+  const bank = useWatch((cb) => store.watchDoc('settings', BANK_ID, cb), []);
+  itemPool = useMemo(() => G.buildPool(bank), [bank]);
 
   const pick = (id) => { saveMe(id); setMeId(id); if (route[0] === 'profile') go('/'); };
 
   let body;
   if (players === undefined) body = html`<main class="screen"><p class="muted center">Loading…</p></main>`;
   else if (!me || route[0] === 'profile') body = html`<${ProfileScreen} players=${players} me=${me} onPick=${pick} />`;
+  else if (route[0] === 'items') body = html`<${ItemsScreen} bank=${bank} />`;
   else if (route[0] === 'new') body = html`<${NewGame} mode=${route[1] === 'versus' ? 'versus' : 'bingo'} me=${me} players=${players} key=${route[1]} />`;
   else if (route[0] === 'g' && route[1]) body = html`<${GameScreen} code=${route[1].toUpperCase()} me=${me} playersById=${playersById} key=${route[1]} />`;
   else body = html`<${Home} me=${me} playersById=${playersById} />`;

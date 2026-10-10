@@ -1,7 +1,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  doc, collection, query, where, onSnapshot, getDoc, getDocFromCache, setDoc, updateDoc,
+  doc, collection, query, where, onSnapshot, getDoc, getDocFromCache, getDocs, setDoc, updateDoc, deleteDoc,
   runTransaction, deleteField,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -60,4 +60,13 @@ export async function transact(col, id, fn) {
     tx.set(ref, next);
     return { ok: true, data: next };
   });
+}
+
+export async function getWhere(col, field, op, value) {
+  const snap = await getDocs(query(collection(db, col), where(field, op, value)));
+  return snap.docs.map(withId);
+}
+
+export function remove(col, id) {
+  return deleteDoc(doc(db, col, id)).catch((e) => { logErr(`remove ${col}/${id}`)(e); throw e; });
 }

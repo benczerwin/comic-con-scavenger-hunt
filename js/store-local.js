@@ -75,3 +75,13 @@ export async function transact(col, id, fn) {
   save(col, all);
   return { ok: true, data: next };
 }
+
+export async function getWhere(col, field, op, value) {
+  return rows(col).filter((r) => (op === 'array-contains' ? (r[field] || []).includes(value) : r[field] === value));
+}
+
+export async function remove(col, id) {
+  const all = load(col);
+  delete all[id];
+  save(col, all);
+}
