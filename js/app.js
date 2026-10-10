@@ -1014,9 +1014,10 @@ function ItemsScreen({ bank }) {
             <button class="pill ${catF === k ? 'sel' : ''}" onClick=${() => setCatF(k)}>${k !== 'all' ? html`<span class=${`dot cat-${k}`}></span> ` : ''}${l}</button>`)}
         </div>
         <div class="filter-row">
-          ${[['all', 'All'], ['e', '★'], ['m', '★★'], ['h', '★★★']].map(([k, l]) => html`
+          ${[['all', 'All stars'], ['e', '★'], ['m', '★★'], ['h', '★★★']].map(([k, l]) => html`
             <button class="pill ${tier === k ? 'sel' : ''}" onClick=${() => setTier(k)}>${l}</button>`)}
-          <span class="sep"></span>
+        </div>
+        <div class="filter-row">
           ${[['all', 'Any'], ['on', 'On'], ['off', 'Off'], ['custom', 'Mine']].map(([k, l]) => html`
             <button class="pill ${show === k ? 'sel' : ''}" onClick=${() => setShow(k)}>${l}</button>`)}
         </div>
