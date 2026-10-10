@@ -1,7 +1,7 @@
 import { html, render, useState, useEffect, useMemo, useRef } from '../vendor/htm-preact.js';
 import * as store from './store.js';
 import { EMBLEMS, emblemById, emblemSVG } from './data/emblems.js';
-import { CATEGORY_LABELS, CHARACTER_CATS, ITEMS } from './data/items.js';
+import { CATEGORY_LABELS, ITEMS, itemKind } from './data/items.js';
 import * as G from './game.js';
 import { processPhoto } from './photo.js';
 import { renderRecap } from './recap.js';
@@ -70,7 +70,17 @@ const firstName = (p) => (p?.name || 'Someone').split(' ')[0];
 // Current item pool (built-ins minus disabled + custom). Kept in sync with settings/itemBank by <App>.
 let itemPool = ITEMS;
 /** The items a game draws from: everything on, or only characters/shows/movies. */
-const poolFor = (g) => (g.charsOnly ? itemPool.filter((it) => CHARACTER_CATS.includes(it.cat)) : itemPool);
+// Modes are stored as 'bingo' / 'versus' but shown as Solo Series (own boards) / Crossover (one shared board).
+const modeTag = (g) => (g.mode === 'bingo' ? 'SOLO' : g.coop ? 'CO-OP' : 'X-OVER');
+
+const MIXES = {
+  all: { label: 'Everything', blurb: 'Characters, objects, con moments & challenges' },
+  char: { label: 'Characters only', blurb: 'Specific characters, shows, movies & games', short: 'Characters' },
+  obj: { label: 'Objects & themes', blurb: 'Merch, props & looks: keychains, wings, wigs…', short: 'Objects & themes' },
+};
+const mixOf = (g) => g.mix || (g.charsOnly ? 'char' : 'all'); // charsOnly: games made before mixes existed
+const poolFor = (g) => { const m = mixOf(g); return m === 'all' ? itemPool : itemPool.filter((it) => itemKind(it) === m); };
+const mixTag = (g) => (MIXES[mixOf(g)]?.short ? ` · ${MIXES[mixOf(g)].short}` : '');
 const BANK_ID = 'itemBank';
 
 async function uniqueCode() {
@@ -97,7 +107,7 @@ async function createGame(settings, createdBy) {
   const code = await uniqueCode();
   const base = {
     code, mode: settings.mode, size: settings.size, difficulty: settings.difficulty,
-    players: settings.players, charsOnly: !!settings.charsOnly, createdBy, createdAt: Date.now(), winner: null,
+    players: settings.players, mix: settings.mix || 'all', createdBy, createdAt: Date.now(), winner: null,
   };
   const fail = (e) => toast(`Sync problem: ${e.message}`, 'error');
   if (settings.mode === 'bingo') {
@@ -150,7 +160,7 @@ async function confirmDelete(code) {
 
 const settingsFrom = (g) => ({
   mode: g.mode, size: g.size, difficulty: g.difficulty, players: g.players,
-  winRule: g.winRule, minutes: g.minutes || 60, freeCenter: g.freeCenter, sameCard: g.sameCard, connect: g.connect, coop: !!g.coop, charsOnly: !!g.charsOnly,
+  winRule: g.winRule, minutes: g.minutes || 60, freeCenter: g.freeCenter, sameCard: g.sameCard, connect: g.connect, coop: !!g.coop, mix: mixOf(g),
 });
 
 // ───────────────────────── screens ─────────────────────────
@@ -249,14 +259,14 @@ function Home({ me, playersById }) {
 
       <section class="modes">
         <a class="mode-card bingo" href="#/new/bingo">
-          <div class="burst">BINGO!</div>
-          <h2>Bingo Hunt</h2>
-          <p>Everyone gets their own card. Snap photos, complete lines, win.</p>
+          <div class="burst">SOLO!</div>
+          <h2>Solo Series</h2>
+          <p>Everyone gets their own board. Snap photos, complete lines, win.</p>
         </a>
         <a class="mode-card versus" href="#/new/versus">
-          <div class="burst">VS!</div>
-          <h2>Showdown</h2>
-          <p>One shared board, tic-tac-toe style. First photo claims the square!</p>
+          <div class="burst">X-OVER!</div>
+          <h2>Crossover</h2>
+          <p>Everyone on one shared board. Race to claim squares, or team up to fill it.</p>
         </a>
       </section>
 
@@ -280,7 +290,7 @@ function Home({ me, playersById }) {
             return html`
               <div class="game-row-wrap" key=${g.code}>
               <a class="game-row" href="#/g/${g.code}">
-                <span class="tag ${g.mode}">${g.mode === 'bingo' ? 'BINGO' : g.coop ? 'CO-OP' : 'VS'}</span>
+                <span class="tag ${g.mode}">${modeTag(g)}</span>
                 <span class="grow">
                   <b>${g.code}</b> · ${g.size}×${g.size}
                   ${g.mode === 'bingo' ? ` · ${G.WIN_RULES[g.winRule]?.label}` : g.coop ? ' · team blackout' : ` · connect ${g.connect}`}
@@ -310,8 +320,8 @@ function Home({ me, playersById }) {
       <details class="panel how">
         <summary>How to play</summary>
         <ul>
-          <li><b>Bingo Hunt:</b> each player gets a card. Tap a square → take a photo → it's marked. Choose a win rule when you create the game.</li>
-          <li><b>Showdown:</b> everyone shares one board. Snap it first to claim it with your emblem. Get N-in-a-row to win. Or pick <b>Co-op</b>: work together to black out the whole board.</li>
+          <li><b>Solo Series:</b> each player gets their own board. Tap a square → take a photo → it's marked. Choose a win rule when you create the game.</li>
+          <li><b>Crossover:</b> everyone shares one board. Snap it first to claim it with your emblem. Get N-in-a-row to win. Or pick <b>Co-op</b>: work together to black out the whole board.</li>
           <li><b>Backups:</b> you get 1–3 backup items (based on board size). Tap a backup, then tap any unmarked square to swap it in.</li>
           <li><b>Easy squares</b> are thematic (tails, wings, horns…). ★★★ squares are the rare finds.</li>
           <li>Share the game code or link with your crew. Anyone can join mid-game.</li>
@@ -340,7 +350,7 @@ function NewGame({ mode, me, players }) {
   const [sameCard, setSameCard] = useState(false);
   const [connect, setConnect] = useState(G.defaultConnect(3));
   const [coop, setCoop] = useState(false);
-  const [charsOnly, setCharsOnly] = useState(false);
+  const [mix, setMix] = useState('all');
   const [selected, setSelected] = useState([me.id]);
   const [busy, setBusy] = useState(false);
 
@@ -354,7 +364,7 @@ function NewGame({ mode, me, players }) {
   const create = async () => {
     setBusy(true);
     try {
-      const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, charsOnly, players: selected }, me.id);
+      const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, mix, players: selected }, me.id);
       go(`/g/${code}`);
     } catch (e) {
       toast(`Couldn't create game: ${e.message}`, 'error');
@@ -363,12 +373,12 @@ function NewGame({ mode, me, players }) {
   };
 
   const nb = G.backupsFor(size);
-  const pool = poolFor({ charsOnly });
+  const pool = poolFor({ mix });
   const tooFew = pool.length < size * size + nb;
   return html`
     <main class="screen">
       <nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>
-      <h1 class="title">${isBingo ? 'New Bingo Hunt' : 'New Showdown'}</h1>
+      <h1 class="title">${isBingo ? 'New Solo Series' : 'New Crossover'}</h1>
 
       <section class="panel">
         <h2>Board size</h2>
@@ -377,8 +387,8 @@ function NewGame({ mode, me, players }) {
         <p class="muted small">Each player gets <b>${nb} backup${nb > 1 ? 's' : ''}</b> to swap in.</p>
 
         <h2>What's on the board?</h2>
-        <${Choice} value=${charsOnly} onChange=${setCharsOnly}
-          options=${[[false, 'Everything', 'Characters, con moments & challenges'], [true, 'Characters only', 'Specific characters, shows, movies & games']]} />
+        <${Choice} value=${mix} onChange=${setMix}
+          options=${Object.entries(MIXES).map(([k, m]) => [k, m.label, m.blurb])} />
 
         <h2>Difficulty</h2>
         <${Choice} value=${difficulty} onChange=${setDifficulty}
@@ -420,8 +430,8 @@ function NewGame({ mode, me, players }) {
         <p class="muted small">Not listed? They can join anytime with the game code.</p>
       </section>
 
-      <p class="muted small center">Drawing from <b>${pool.length}</b> ${charsOnly ? 'character ' : ''}hunt items · <a href="#/items">edit list</a></p>
-      ${tooFew && html`<div class="banner warn">Not enough items turned on for a ${size}×${size} board. Turn more on in the item list${charsOnly ? ' or pick Everything' : ''}.</div>`}
+      <p class="muted small center">Drawing from <b>${pool.length}</b> hunt items${mix === 'all' ? '' : ` (${MIXES[mix].short.toLowerCase()})`} · <a href="#/items">edit list</a></p>
+      ${tooFew && html`<div class="banner warn">Not enough items turned on for a ${size}×${size} board. Turn more on in the item list${mix !== 'all' ? ' or pick Everything' : ''}.</div>`}
       <button class="btn primary huge" disabled=${busy || tooFew} onClick=${create}>${busy ? 'Creating…' : 'Start the hunt!'}</button>
     </main>`;
 }
@@ -539,7 +549,7 @@ function PlayerStats({ p, s, me, playersById }) {
         <h2>Games</h2>
         <div class="game-list">
           ${s.recent.map((g) => html`<a class="game-row" href="#/g/${g.code}" key=${g.code}>
-            <span class="tag ${g.mode}">${g.mode === 'bingo' ? 'BINGO' : g.coop ? 'CO-OP' : 'VS'}</span>
+            <span class="tag ${g.mode}">${modeTag(g)}</span>
             <span class="grow"><b>${g.code}</b> · ${g.size}×${g.size}
               <small>${new Date(g.createdAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} · ${result(g)}</small></span>
           </a>`)}
@@ -1183,7 +1193,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
   return html`
     ${celebrate && html`<${Confetti} />`}
     <div class="game-info">
-      <span>${game.size}×${game.size} · ${G.WIN_RULES[game.winRule]?.label} · ${G.DIFFICULTY[game.difficulty]?.label}${game.charsOnly ? ' · Characters' : ''}</span>
+      <span>${game.size}×${game.size} · ${G.WIN_RULES[game.winRule]?.label} · ${G.DIFFICULTY[game.difficulty]?.label}${mixTag(game)}</span>
       ${game.endsAt && html`<span class="timer ${timeUp ? 'over' : ''}">⏱ ${timeUp ? "Time's up!" : G.fmtDuration(game.endsAt - now)}</span>`}
     </div>
     ${winnerId && html`<${WinBanner}
@@ -1360,7 +1370,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
   return html`
     ${celebrate && html`<${Confetti} />`}
-    <div class="game-info"><span>${game.size}×${game.size} · ${coop ? 'Co-op: black out the board' : `${game.connect} in a row wins`} · ${G.DIFFICULTY[game.difficulty]?.label}${game.charsOnly ? ' · Characters' : ''}</span></div>
+    <div class="game-info"><span>${game.size}×${game.size} · ${coop ? 'Co-op: black out the board' : `${game.connect} in a row wins`} · ${G.DIFFICULTY[game.difficulty]?.label}${mixTag(game)}</span></div>
     ${over && html`<${WinBanner}
       text=${game.winner === 'team' ? 'TEAM BLACKOUT!' : game.winner === 'draw' ? "IT'S A DRAW!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
       sub=${coop ? `All ${total} squares found together. 🎉` : !winLine && game.winner !== 'draw' ? 'Board full: most squares wins.' : null}

@@ -20,6 +20,7 @@
   --c-games: #b2f2bb;
   --c-hot: #ffc078;
   --c-action: #d0bfff;
+  --c-merch: #99e9f2;
   --c-free: #ffd23f;
 }
 
@@ -240,6 +241,7 @@ a { color: inherit; }
 .cat-games { --tile: var(--c-games); }
 .cat-hot { --tile: var(--c-hot); }
 .cat-action { --tile: var(--c-action); }
+.cat-merch { --tile: var(--c-merch); }
 .cat-free { --tile: var(--c-free); }
 .tile.tier-free .txt { font-family: var(--display); font-size: calc(min(680px, 100vw) / var(--n) * 0.16); letter-spacing: 1px; }
 

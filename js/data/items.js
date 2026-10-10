@@ -2,7 +2,7 @@
 // Tiers: e = easy (thematic, you'll see dozens), m = medium (popular characters & con moments),
 //        h = hard (hot-right-now / very specific / rare).
 // Categories pick the tile color: theme, cosplay, hot, anime, games, nycc, action.
-// cosplay/anime/games/hot are specific characters, shows & movies (CHARACTER_CATS).
+// Each item also has a kind (character / object-theme / neither), see itemKind().
 
 const RAW = {
   theme: [
@@ -505,6 +505,96 @@ const MORE = {
   ],
 };
 
+// Merch, props & collectibles (count toward "Objects & themes" boards).
+const MERCH = {
+  merch: [
+    ['e', '🔑', 'A Pokémon keychain'],
+    ['e', '🧸', 'A plushie keychain on a bag'],
+    ['e', '📌', 'An enamel pin of a character'],
+    ['e', '👕', 'A character T-shirt'],
+    ['e', '🧥', 'A character hoodie or jacket'],
+    ['e', '⚔️', 'A foam sword'],
+    ['e', '📦', "A Funko Pop in someone's hand"],
+    ['e', '🧦', 'Anime socks or leggings'],
+    ['e', '👜', 'A fandom tote bag'],
+    ['e', '🧴', 'A sticker-covered water bottle'],
+    ['e', '📖', "A comic book in someone's hand"],
+    ['e', '🗡️', 'A lightsaber (any color)'],
+    ['e', '🪄', 'A replica Harry Potter wand'],
+    ['e', '🎀', 'A Sanrio item (any)'],
+    ['e', '🧢', 'A character baseball cap'],
+    ['m', '👛', 'An ita bag (a bag covered in one character)'],
+    ['m', '🥟', 'A Squishmallow'],
+    ['m', '👼', 'A Sonny Angel'],
+    ['m', '🐰', 'A Jellycat plush'],
+    ['m', '🎁', 'A blind box being opened'],
+    ['m', '🗞️', 'An art print tube sticking out of a bag'],
+    ['m', '🎮', 'A Nintendo Switch being played'],
+    ['m', '👾', 'A Game Boy (any)'],
+    ['m', '🥚', 'A Tamagotchi'],
+    ['m', '⚡', 'A Pikachu hat'],
+    ['m', '🩷', 'A Kirby plush'],
+    ['m', '🌳', 'A Totoro item'],
+    ['m', '🎒', 'A Loungefly mini backpack'],
+    ['m', '🧱', 'A LEGO set box being carried'],
+    ['m', '☕', 'A character mug or tumbler'],
+    ['m', '🪧', 'An acrylic standee'],
+    ['m', '🗂️', 'A trading card binder'],
+    ['m', '✨', 'A shiny holo card'],
+    ['m', '🖤', 'A Kuromi or My Melody item'],
+    ['m', '🐱', 'Light-up cat ears'],
+    ['m', '🐊', 'Crocs with character Jibbitz'],
+    ['m', '🧸', 'A plush bigger than a cat'],
+    ['h', '🏅', 'A graded card in a slab (PSA/BGS)'],
+    ['h', '🗿', 'A big statue being carried out'],
+    ['h', '👗', 'A Labubu wearing an outfit'],
+    ['h', '🎨', 'A hand-painted jacket of a character'],
+    ['h', '🪖', 'A full replica helmet (Mandalorian, Daft Punk...)'],
+    ['h', '🧍', "A Nendoroid in someone's hand"],
+    ['h', '🐻', 'A plush bigger than its owner'],
+    ['h', '🔥', 'A Charizard card'],
+    ['h', '📕', 'A con-exclusive variant comic'],
+    ['h', '💿', 'A soundtrack on vinyl'],
+    ['h', '👯', 'Matching keychains on two friends'],
+    ['h', '👟', 'Custom-painted sneakers of a character'],
+    ['h', '🛏️', 'A dakimakura (body pillow)'],
+    ['h', '🐹', 'A Chiikawa item'],
+    ['h', '🟢', 'A Smiski figure'],
+    ['h', '🤖', 'A Gundam model kit box'],
+  ],
+};
+
+/** kind: 'char' = a definable character/show/movie/game, 'obj' = an object or theme, null = neither
+ *  (con moments, challenges). Most items take their category's default; KIND_OVERRIDES fixes the rest. */
+const DEFAULT_KIND = { cosplay: 'char', anime: 'char', games: 'char', hot: 'char', theme: 'obj', merch: 'obj' };
+const KIND_OVERRIDES = {
+  // franchise objects & generic themes that sit in character categories
+  "Captain America's shield": 'obj',
+  "Thor's hammer (Mjolnir)": 'obj',
+  'Mickey or Minnie ears': 'obj',
+  'Any clown cosplay': 'obj',
+  'Any anime character with a giant weapon': 'obj',
+  'Someone holding a Poké Ball': 'obj',
+  'A Blue Lock jersey': 'obj',
+  'A Haikyu!! jersey': 'obj',
+  'Pochita plush': 'obj',
+  'A Labubu clipped to a bag': 'obj',
+  '3+ Labubus on one person': 'obj',
+  'Pokémon 30th anniversary merch': 'obj',
+  "Luffy's straw hat": 'obj',
+  'Someone doing the Naruto run': null,
+  // too vague to be a definable character
+  'Any anime character': null,
+  'Any cartoon character': null,
+  'Any video game character': null,
+  'Any horror movie villain': null,
+  // con-floor items that are really objects
+  'A wall of Funko Pops': 'obj',
+  'A backpack covered in pins': 'obj',
+  'A hat covered in pins': 'obj',
+};
+export const itemKind = (it) => (it.text in KIND_OVERRIDES ? KIND_OVERRIDES[it.text] : DEFAULT_KIND[it.cat] ?? null);
+
 export const CATEGORY_LABELS = {
   theme: 'Spot it',
   nycc: 'Con life',
@@ -513,12 +603,10 @@ export const CATEGORY_LABELS = {
   games: 'Games',
   hot: 'Hot now',
   action: 'Challenge',
+  merch: 'Merch & props',
 };
 
-/** Categories that are specific characters, shows & movies. */
-export const CHARACTER_CATS = ['cosplay', 'anime', 'games', 'hot'];
-
-export const ITEMS = [RAW, MORE].flatMap((group) => Object.entries(group)).flatMap(([cat, rows]) =>
+export const ITEMS = [RAW, MORE, MERCH].flatMap((group) => Object.entries(group)).flatMap(([cat, rows]) =>
   rows.map(([tier, icon, text]) => ({ tier, icon, text, cat }))
 );
 

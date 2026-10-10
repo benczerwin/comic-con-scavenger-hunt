@@ -9,7 +9,7 @@ const PAPER = '#fff8e7';
 const YELLOW = '#ffd23f';
 const RED = '#ef3e36';
 const CAT_COLORS = {
-  theme: '#ffe066', nycc: '#a5d8ff', cosplay: '#ffa8a8', anime: '#fcc2d7',
+  theme: '#ffe066', merch: '#99e9f2', nycc: '#a5d8ff', cosplay: '#ffa8a8', anime: '#fcc2d7',
   games: '#b2f2bb', hot: '#ffc078', action: '#d0bfff', free: '#ffd23f',
 };
 const DISPLAY = "'Bangers', Impact, sans-serif";
@@ -219,8 +219,8 @@ export async function renderRecap({ game, boards = [], thumbs, playersById, feat
   comicText(ctx, 'NYCC PHOTO HUNT', W / 2, 140, 118, RED);
   const date = new Date(game.wonAt || game.createdAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
   const modeLine = isBingo
-    ? `Bingo Hunt · ${n}×${n} · ${G.WIN_RULES[game.winRule]?.label || ''}`
-    : `Showdown · ${n}×${n} · ${game.coop ? 'Co-op blackout' : `${game.connect} in a row`}`;
+    ? `Solo Series · ${n}×${n} · ${G.WIN_RULES[game.winRule]?.label || ''}`
+    : `Crossover · ${n}×${n} · ${game.coop ? 'Co-op blackout' : `${game.connect} in a row`}`;
   ctx.font = `900 34px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'center';
   ctx.fillText(`${modeLine} · ${date}`, W / 2, 200);
   let y = H_TITLE;
