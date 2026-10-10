@@ -152,7 +152,8 @@ async function drawBoard(ctx, { x, y, w, n, cells, highlight, versus, thumbs, ge
  * game: game doc. boards: bingo boards (ignored for versus). thumbs: {photoId: {thumb}}.
  * Returns a PNG Blob.
  */
-export async function renderRecap({ game, boards = [], thumbs, playersById }) {
+/** featuredId: whose bingo card gets the big spot (defaults to the winner, else the top score). */
+export async function renderRecap({ game, boards = [], thumbs, playersById, featuredId }) {
   await Promise.all([
     document.fonts?.load(`100px ${DISPLAY}`), document.fonts?.load(`900 40px ${BODY}`), document.fonts?.load(`700 30px ${BODY}`),
   ].filter(Boolean)).catch(() => {});
@@ -175,7 +176,7 @@ export async function renderRecap({ game, boards = [], thumbs, playersById }) {
       const leaders = scored.filter((x) => x.s.points === best);
       winnerId = leaders.length === 1 ? leaders[0].b.playerId : 'draw';
     }
-    const top = scored.find((x) => x.b.playerId === winnerId) || scored[0];
+    const top = scored.find((x) => x.b.playerId === featuredId) || scored.find((x) => x.b.playerId === winnerId) || scored[0];
     featured = top?.b;
     highlight = top?.s.lineCells || new Set();
     cells = featured ? boardCells(featured) : [];
