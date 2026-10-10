@@ -18,4 +18,24 @@ export const backend = configured && !forceLocal
   : await import('./store-local.js');
 
 export const isLive = backend.isLive;
-export const { watchDoc, watchWhere, watchAll, getOne, getWhere, put, patch, transact, remove } = backend;
+export const { watchDoc, watchWhere, watchAll, getOne, getWhere, put, patch, remove } = backend;
+
+// Transactions need the server, so on slow Wi-Fi they can take a while. Track them so the UI can show
+// "Saving…", and give up after a bit instead of hanging forever.
+let pending = 0;
+const pendingListeners = new Set();
+const emitPending = () => pendingListeners.forEach((cb) => cb(pending));
+export const onPending = (cb) => { pendingListeners.add(cb); return () => pendingListeners.delete(cb); };
+export async function transact(col, id, fn) {
+  pending++; emitPending();
+  let timer;
+  try {
+    return await Promise.race([
+      backend.transact(col, id, fn),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('The connection is slow. Try again in a moment.')), 15000); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    pending--; emitPending();
+  }
+}

@@ -46,6 +46,29 @@ function useNow(active) {
 let pushToast = () => {};
 const toast = (msg, kind = 'info') => pushToast({ msg, kind, id: Math.random() });
 
+// Anything that fails without its own error handling still tells the player, instead of looking like a dead tap.
+const friendlyError = (e) => {
+  const m = String(e?.message || e || '');
+  if (/offline|unavailable|network|failed to fetch/i.test(m)) return 'No connection right now. Try again.';
+  return m.length < 120 && m ? m : 'Something went wrong. Try again.';
+};
+addEventListener('unhandledrejection', (e) => toast(friendlyError(e.reason), 'error'));
+
+/** "Saving…" pill while a save takes longer than half a second. */
+function SyncIndicator() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    let t;
+    const off = store.onPending((n) => {
+      clearTimeout(t);
+      if (n > 0) t = setTimeout(() => setShow(true), 500);
+      else setShow(false);
+    });
+    return () => { off(); clearTimeout(t); };
+  }, []);
+  return show ? html`<div class="sync-pill"><span class="spinner tiny"></span>Saving…</div>` : null;
+}
+
 function Toasts() {
   const [items, setItems] = useState([]);
   pushToast = (t) => {
@@ -2225,7 +2248,7 @@ function App() {
   else if (route[0] === 'g' && route[1]) body = html`<${GameScreen} code=${route[1].toUpperCase()} me=${me} playersById=${playersById} key=${route[1]} />`;
   else body = html`<${Home} me=${me} playersById=${playersById} />`;
 
-  return html`${body}<${Toasts} />`;
+  return html`${body}<${SyncIndicator} /><${Toasts} />`;
 }
 
 render(html`<${App} />`, document.getElementById('app'));
