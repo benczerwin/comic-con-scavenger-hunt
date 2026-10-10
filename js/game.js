@@ -1,4 +1,4 @@
-import { ITEMS, FREE_ITEM } from './data/items.js';
+import { ITEMS, FREE_ITEM, normalizeItem, LEGACY_CATS } from './data/items.js';
 
 export const SIZES = [3, 4, 5, 6, 7];
 
@@ -78,7 +78,7 @@ export function generateCard({ size, difficulty = 'balanced', freeCenter = false
 /** Items games draw from: built-ins minus disabled ones, plus custom items. bank = settings/itemBank doc. */
 export function buildPool(bank) {
   const off = new Set(bank?.disabled || []);
-  return [...ITEMS, ...(bank?.custom || [])].filter((it) => !off.has(it.text));
+  return [...ITEMS, ...(bank?.custom || []).map(normalizeItem)].filter((it) => !off.has(it.text));
 }
 
 /** Every straight run of length k (rows, cols, both diagonals) in an n×n grid. */
@@ -150,7 +150,8 @@ export function playerStats(games, boards) {
     s.found++;
     if (photo) s.photos++;
     if (s.tiers[item.tier] !== undefined) s.tiers[item.tier]++;
-    s.cats[item.cat] = (s.cats[item.cat] || 0) + 1;
+    const cat = LEGACY_CATS[item.cat] || item.cat; // finds from older games use the new categories
+    s.cats[cat] = (s.cats[cat] || 0) + 1;
   };
 
   for (const g of games) {

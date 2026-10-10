@@ -1,7 +1,7 @@
 // The scavenger hunt idea bank.
 // Tiers: e = easy (thematic, you'll see dozens), m = medium (popular characters & con moments),
 //        h = hard (hot-right-now / very specific / rare).
-// Categories pick the tile color and decide which board mixes an item can appear in (see itemKind).
+// Items are written in source groups below; ITEMS sorts them into four categories (see CATEGORY_LABELS).
 
 const RAW = {
   theme: [
@@ -273,7 +273,7 @@ const RAW = {
     ['h', '👯', 'Elphaba AND Glinda together'],
     ['h', '💅', 'Lady Deadpool or Dogpool'],
     ['h', '🎩', 'Alastor (Hazbin Hotel)'],
-    ['h', '⭐', 'A Star Wars: Andor or Ahsoka character'],
+    ['h', '⭐', 'Cassian Andor (Star Wars: Andor)'],
     ['h', '🧑‍🍳', 'Remy or a Ratatouille chef (NYC!)'],
   ],
   action: [
@@ -309,6 +309,30 @@ const RAW = {
 const MORE = {
   cosplay: [
     ['e', '🦸', 'Any Marvel character'],
+    ['e', '🛡️', 'Captain America'],
+    ['e', '⚡', 'Thor'],
+    ['m', '🔍', 'Velma'],
+    ['m', '🤡', 'Art the Clown (Terrifier)'],
+    ['m', '🧩', 'Jigsaw or Billy the puppet (Saw)'],
+    ['m', '🦾', 'The Winter Soldier'],
+    ['m', '💪', 'All Might (My Hero Academia)'],
+    ['m', '🔥', 'Spawn'],
+    ['m', '🗡️', 'Deathstroke'],
+    ['m', '💀', 'The Punisher'],
+    ['m', '🧛', 'Blade'],
+    ['m', '🦸‍♀️', 'Kim Possible'],
+    ['m', '🕷️', 'A Spider-Man villain (not Venom or Carnage)'],
+    ['m', '🚀', 'Any Guardians of the Galaxy member'],
+    ['m', '🤍', 'Ahsoka Tano'],
+    ['m', '🦅', 'Any The Boys character'],
+    ['m', '4️⃣', 'Any Fantastic Four member'],
+    ['m', '🐉', 'Any Mortal Kombat fighter'],
+    ['h', '🐦‍⬛', 'Black Canary'],
+    ['h', '⚖️', 'Judge Dredd'],
+    ['h', '🇬🇧', 'Captain Carter'],
+    ['h', '🐶', 'Courage the Cowardly Dog'],
+    ['h', '🔵', 'Mr. Terrific'],
+    ['h', '🕰️', 'A Watchmen character (Rorschach, Dr. Manhattan…)'],
     ['e', '🦇', 'Any DC character'],
     ['e', '🌌', 'Any Star Wars character'],
     ['e', '🏰', 'Any Disney or Pixar character'],
@@ -356,7 +380,7 @@ const MORE = {
     ['m', '🧙', 'Gandalf'],
     ['m', '⚡', 'Harry Potter himself (scar + glasses)'],
     ['m', '🛹', 'Marty McFly or Doc Brown'],
-    ['e', '🐕', 'Scooby-Doo or anyone from Mystery Inc.'],
+    ['e', '🐕', 'Scooby-Doo, Shaggy, Fred or Daphne'],
     ['m', '🎩', 'The Mad Hatter or Alice'],
     ['m', '🖤', 'Maleficent'],
     ['m', '🐙', 'Ursula'],
@@ -591,24 +615,97 @@ const MERCH = {
   ],
 };
 
-/** What a board mix can draw: 'char' = a definable character/show/movie/game, 'obj' = fandom gear.
- *  Everything else (costume details, con moments, challenges) only shows up on "Everything" boards. */
-const CATEGORY_KIND = { cosplay: 'char', anime: 'char', games: 'char', hot: 'char', merch: 'obj' };
-export const itemKind = (it) => CATEGORY_KIND[it.cat] ?? null;
-
-export const CATEGORY_LABELS = {
-  cosplay: 'Comics, movies & TV',
-  anime: 'Anime',
-  games: 'Video games',
-  hot: 'New & trending',
-  merch: 'Fandom gear',
-  theme: 'Costume details',
-  nycc: 'Con moments',
-  action: 'Photo challenges',
+// Broad franchises and vibes ("anything Pokémon"): characters, gear or looks all count.
+const THEMES = {
+  themes: [
+    ['e', '⚪', 'Anything Pokémon'],
+    ['e', '🌌', 'Anything Star Wars'],
+    ['e', '🦸', 'Anything Marvel'],
+    ['e', '🦇', 'Anything DC'],
+    ['e', '🔪', 'Anything horror'],
+    ['e', '🏰', 'Anything Disney or Pixar'],
+    ['e', '🎴', 'Anything anime'],
+    ['e', '🦹', 'Anything superhero'],
+    ['e', '🍄', 'Anything Nintendo'],
+    ['e', '🪄', 'Anything Harry Potter'],
+    ['e', '🎀', 'Anything Sanrio'],
+    ['e', '🕸️', 'Anything spooky or gothic'],
+    ['m', '🍃', 'Anything Studio Ghibli'],
+    ['m', '💍', 'Anything Lord of the Rings'],
+    ['m', '🐉', 'Anything Dragon Ball'],
+    ['m', '🗡️', 'Anything Demon Slayer'],
+    ['m', '🔺', 'Anything Zelda'],
+    ['m', '💙', 'Anything Sonic'],
+    ['m', '⛏️', 'Anything Minecraft'],
+    ['m', '🚀', 'Anything sci-fi or space'],
+    ['m', '🛡️', 'Anything medieval or fantasy'],
+    ['m', '📼', 'Anything 80s or retro'],
+    ['m', '🧇', 'Anything Stranger Things'],
+    ['m', '👻', 'Anything Ghostbusters'],
+    ['m', '🤖', 'Anything Transformers'],
+    ['m', '🎤', 'Anything K-pop'],
+    ['m', '🏴‍☠️', 'Anything One Piece'],
+    ['m', '🦖', 'Anything dinosaurs'],
+    ['m', '🐲', 'Anything Game of Thrones or House of the Dragon'],
+    ['h', '🌃', 'Anything cyberpunk or neon'],
+    ['h', '🪲', 'Anything Hollow Knight'],
+    ['h', '🎩', 'Anything Hazbin Hotel'],
+    ['h', '🎲', 'Anything Dungeons & Dragons'],
+    ['h', '💿', 'Anything Y2K'],
+    ['h', '🩷', 'Anything Wicked'],
+    ['h', '🧡', 'Anything Arcane'],
+    ['h', '🪚', 'Anything Chainsaw Man'],
+    ['h', '🧱', 'Anything LEGO'],
+  ],
 };
 
-export const ITEMS = [RAW, MORE, MERCH].flatMap((group) => Object.entries(group)).flatMap(([cat, rows]) =>
-  rows.map(([tier, icon, text]) => ({ tier, icon, text, cat }))
+/** The four categories everything is sorted into. */
+export const CATEGORY_LABELS = {
+  chars: 'Characters',
+  themes: 'Themes',
+  desc: 'Descriptors',
+  items: 'Items',
+};
+
+// Where each source group lands, plus the exceptions (by item text).
+const GROUP_CAT = { cosplay: 'chars', anime: 'chars', games: 'chars', hot: 'chars', merch: 'items', themes: 'themes', theme: 'desc', nycc: 'desc', action: 'desc' };
+const CAT_OVERRIDES = {
+  // costume details that are really themes / vibes
+  'A zombie': 'themes', 'A pirate': 'themes', 'Dragon-themed anything': 'themes', 'A werewolf or full fursuit': 'themes',
+  'Mushroom-themed outfit': 'themes', 'A mermaid or sea creature': 'themes', 'A witch with a broom': 'themes',
+  'Anything pumpkin (it IS October)': 'themes', 'A villain (any villain)': 'themes', 'Bone or skeleton costume': 'themes',
+  'A fairy': 'themes', 'A ninja': 'themes', 'An astronaut or space suit': 'themes', 'A dinosaur (inflatables count)': 'themes',
+  'Steampunk gear (gears, brass, goggles)': 'themes', 'A robot or android costume': 'themes', 'A bear (costume, hat, or plush)': 'themes',
+  'A frog hat or frog costume': 'themes', 'Statue of Liberty cosplay': 'themes', 'An NYC-themed cosplay (taxi, subway, pigeon...)': 'themes',
+  'Pizza Rat cosplay': 'themes', 'A full LEGO minifigure costume': 'themes',
+  // things you'd photograph as an object or prop
+  'Someone carrying a sword': 'items', 'A magic wand or staff': 'items', 'Someone with a shield': 'items', 'A sci-fi blaster prop': 'items',
+  'A bow and arrow': 'items', 'A giant hammer prop': 'items', 'An axe prop': 'items', 'A fan used as a prop or weapon': 'items',
+  'A character-shaped backpack': 'items', "A plushie riding on someone's shoulder": 'items', 'A handmade crochet/knit character item': 'items',
+  'A backpack covered in pins': 'items', 'A wall of Funko Pops': 'items', 'A hat covered in pins': 'items', 'The big NYCC sign at the Javits': 'items',
+  'A giant LEGO build': 'items', 'A life-size character statue': 'items', 'A famous movie/TV vehicle on display': 'items',
+  'A wall of comic longboxes': 'items', 'A vintage comic over $1,000': 'items', 'A print you would actually buy': 'items',
+  'A "Free Hugs" or funny sign': 'items',
+  // challenges built around characters
+  'High-five a Deadpool': 'chars', 'Get a Stormtrooper to pose with you': 'chars', "Your favorite character (anyone's take)": 'chars',
+  "Your opponent's favorite character": 'chars', 'A full Iron Man suit with working lights': 'chars', 'A hero and their archnemesis together': 'chars',
+  'Two people cosplaying the same character, posing together': 'chars', 'An entire team cosplay (Avengers, Fellowship, Scooby gang...)': 'chars',
+};
+
+/** Old category keys (before the four categories) → the new ones. Used for custom items and older games. */
+export const LEGACY_CATS = { cosplay: 'chars', anime: 'chars', games: 'chars', hot: 'chars', merch: 'items', theme: 'desc', nycc: 'desc', action: 'desc' };
+const LEGACY_LABELS = { cosplay: 'Comics, movies & TV', anime: 'Anime', games: 'Video games', hot: 'New & trending', merch: 'Fandom gear', theme: 'Costume details', nycc: 'Con moments', action: 'Photo challenges' };
+export const catLabel = (cat) => CATEGORY_LABELS[cat] || LEGACY_LABELS[cat] || '';
+
+/** Makes any item (built-in, custom or from an older game) use the four categories. Keeps the source group. */
+export const normalizeItem = (it) => (CATEGORY_LABELS[it.cat] || it.cat === 'free' ? it : { ...it, group: it.group || it.cat, cat: LEGACY_CATS[it.cat] || 'desc' });
+
+// Older games picked "Characters only" / "Fandom gear"; that still maps onto the source groups.
+const GROUP_KIND = { cosplay: 'char', anime: 'char', games: 'char', hot: 'char', merch: 'obj' };
+export const itemKind = (it) => GROUP_KIND[it.group || it.cat] ?? null;
+
+export const ITEMS = [RAW, MORE, MERCH, THEMES].flatMap((g) => Object.entries(g)).flatMap(([group, rows]) =>
+  rows.map(([tier, icon, text]) => ({ tier, icon, text, cat: CAT_OVERRIDES[text] || GROUP_CAT[group], group }))
 );
 
 export const FREE_ITEM = { tier: 'free', icon: '⭐', text: 'FREE SPACE', cat: 'free' };

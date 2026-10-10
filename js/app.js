@@ -1,7 +1,7 @@
 import { html, render, useState, useEffect, useMemo, useRef, createContext, useContext } from '../vendor/htm-preact.js';
 import * as store from './store.js';
 import { EMBLEMS, emblemById, emblemSVG } from './data/emblems.js';
-import { CATEGORY_LABELS, ITEMS, itemKind } from './data/items.js';
+import { CATEGORY_LABELS, ITEMS, itemKind, catLabel, normalizeItem } from './data/items.js';
 import * as G from './game.js';
 import { processPhoto } from './photo.js';
 import { renderRecap, renderCollage } from './recap.js';
@@ -82,7 +82,8 @@ const poolFor = (g) => {
   const cats = g.cats?.length ? new Set(g.cats) : null;
   const m = legacyMix(g);
   const tiers = g.tiers?.length ? new Set(g.tiers) : null;
-  return itemPool.filter((it) => (cats ? cats.has(it.cat) : m === 'all' || itemKind(it) === m) && (!tiers || tiers.has(it.tier)));
+  // it.group lets older games that picked the previous categories keep working
+  return itemPool.filter((it) => (cats ? cats.has(it.cat) || cats.has(it.group) : m === 'all' || itemKind(it) === m) && (!tiers || tiers.has(it.tier)));
 };
 const someCats = (cats) => (cats?.length && cats.length < ALL_CATS.length ? cats : undefined); // store only a real subset
 const ALL_TIERS = ['e', 'm', 'h'];
@@ -90,7 +91,7 @@ const backupCount = (g) => g.backupCount ?? G.backupsFor(g.size);
 // Difficulty only means something when more than one star level is in play.
 const diffTag = (g) => (g.tiers?.length === 1 ? '' : ` · ${G.DIFFICULTY[g.difficulty]?.label}`);
 const tiersTag = (g) => (g.tiers?.length && g.tiers.length < 3 ? ` · ${g.tiers.map((t) => TIER_STARS[t]).join(' ')} only` : '');
-const catsLabel = (cats) => (cats.length <= 2 ? cats.map((c) => CATEGORY_LABELS[c]).join(' + ') : `${cats.length} categories`);
+const catsLabel = (cats) => (cats.length <= 2 ? cats.map((c) => catLabel(c)).join(' + ') : `${cats.length} categories`);
 const mixTag = (g) => (someCats(g.cats) ? ` · ${catsLabel(g.cats)}`
   : !g.cats && legacyMix(g) !== 'all' ? ` · ${legacyMix(g) === 'char' ? 'Characters' : 'Fandom gear'}` : '');
 const BANK_ID = 'itemBank';
@@ -817,7 +818,7 @@ function PlayerStats({ p, s, me, playersById }) {
         </div>
         ${cats.length > 0 && html`<h2>Favorite kinds of finds</h2>
           <div class="bars">${cats.map(([c, n]) => html`<div class="bar-row" key=${c}>
-            <span>${CATEGORY_LABELS[c] || c}</span>
+            <span>${catLabel(c) || c}</span>
             <span class="bar"><span class=${`cat-${c}`} style=${`width:${(n / maxCat) * 100}%`}></span></span>
             <b>${n}</b></div>`)}</div>`}
       </section>
@@ -846,7 +847,7 @@ function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compa
   const [icon, setIcon] = useState(initial?.icon || '');
   const [text, setText] = useState(initial?.text || '');
   const [tier, setTier] = useState(initial?.tier && initial.tier !== 'free' ? initial.tier : 'e');
-  const [cat, setCat] = useState(initial?.cat && initial.cat !== 'free' ? initial.cat : 'theme');
+  const [cat, setCat] = useState(initial?.cat && initial.cat !== 'free' ? normalizeItem(initial).cat : 'desc');
 
   const submit = (e) => {
     e.preventDefault();
@@ -883,7 +884,7 @@ function ItemsScreen({ bank }) {
   const [catF, setCatF] = useState('all');
   const disabled = new Set(bank?.disabled || []);
   const custom = bank?.custom || [];
-  const all = [...custom.map((c) => ({ ...c, custom: true })), ...ITEMS];
+  const all = [...custom.map((c) => ({ ...normalizeItem(c), custom: true })), ...ITEMS];
 
   const save = (next) => store.put('settings', BANK_ID, {
     disabled: bank?.disabled || [], custom, ...next, updatedAt: Date.now(),
@@ -1254,7 +1255,7 @@ function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel,
           <span class="icon">${item.icon}</span>
           <div>
             <h2>${item.text}</h2>
-            <small>${CATEGORY_LABELS[item.cat] || ''} ${TIER_STARS[item.tier] && html`· <span class="stars">${TIER_STARS[item.tier]}</span>`}</small>
+            <small>${catLabel(item.cat)} ${TIER_STARS[item.tier] && html`· <span class="stars">${TIER_STARS[item.tier]}</span>`}</small>
           </div>
         </div>
         ${photoId && html`
@@ -2098,7 +2099,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
               <span class="stars">${TIER_STARS[slot.item.tier]}</span>
               <span class="icon">${slot.item.icon}</span>
               <h2>${slot.item.text}</h2>
-              <small>${CATEGORY_LABELS[slot.item.cat] || ''} · ${pts(slot.item)} pt${pts(slot.item) === 1 ? '' : 's'}</small>
+              <small>${catLabel(slot.item.cat)} · ${pts(slot.item)} pt${pts(slot.item) === 1 ? '' : 's'}</small>
             </button>
             ${canSnap && (single ? html`<div class="endless-actions">
               <${PhotoButtons} label="Snap it" onFile=${(f) => capture(slot, f).catch((e) => toast(e.message, 'error'))}
