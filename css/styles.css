@@ -193,7 +193,7 @@ a { color: inherit; }
 .choice button small { font-weight: 600; font-size: 0.7rem; color: var(--muted); text-align: center; }
 .choice button.sel { background: var(--yellow); box-shadow: 3px 3px 0 var(--ink); }
 .toggle { display: flex; gap: var(--s3); align-items: center; margin-top: var(--s4); font-weight: 800; }
-.toggle input { width: 22px; height: 22px; accent-color: var(--red); }
+.toggle input { width: 22px; height: 22px; flex: none; accent-color: var(--red); }
 .toggle small { font-weight: 600; color: var(--muted); }
 
 /* game */

@@ -86,6 +86,7 @@ const poolFor = (g) => {
   return itemPool.filter((it) => (m === 'all' || itemKind(it) === m) && (!tiers || tiers.has(it.tier)));
 };
 const ALL_TIERS = ['e', 'm', 'h'];
+const backupCount = (g) => g.backupCount ?? G.backupsFor(g.size);
 // Difficulty only means something when more than one star level is in play.
 const diffTag = (g) => (g.tiers?.length === 1 ? '' : ` · ${G.DIFFICULTY[g.difficulty]?.label}`);
 const tiersTag = (g) => (g.tiers?.length && g.tiers.length < 3 ? ` · ${g.tiers.map((t) => TIER_STARS[t]).join(' ')} only` : '');
@@ -107,7 +108,7 @@ async function uniqueCode() {
 }
 
 function makeBoard(game, pid) {
-  const card = game.card || G.generateCard({ size: game.size, difficulty: game.difficulty, freeCenter: game.freeCenter, pool: poolFor(game) });
+  const card = game.card || G.generateCard({ size: game.size, difficulty: game.difficulty, freeCenter: game.freeCenter, pool: poolFor(game), backups: backupCount(game) });
   return {
     gameId: game.code, playerId: pid, size: game.size,
     items: card.items, backups: card.backups, marks: {}, createdAt: Date.now(),
@@ -115,7 +116,7 @@ function makeBoard(game, pid) {
 }
 
 function versusBackups(game) {
-  return G.generateCard({ size: game.size, difficulty: game.difficulty, exclude: game.items.map((i) => i.text), pool: poolFor(game) }).backups;
+  return G.generateCard({ size: game.size, difficulty: game.difficulty, exclude: game.items.map((i) => i.text), pool: poolFor(game), backups: backupCount(game) }).backups;
 }
 
 async function createGame(settings, createdBy) {
@@ -123,7 +124,9 @@ async function createGame(settings, createdBy) {
   const base = {
     code, mode: settings.mode, size: settings.size, difficulty: settings.difficulty,
     players: settings.players, mix: settings.mix || 'all',
-    ...(settings.tiers?.length && settings.tiers.length < 3 ? { tiers: settings.tiers } : {}), createdBy, createdAt: Date.now(), winner: null,
+    ...(settings.tiers?.length && settings.tiers.length < 3 ? { tiers: settings.tiers } : {}),
+    ...(settings.backupCount !== undefined && settings.mode !== 'endless' ? { backupCount: settings.backupCount } : {}),
+    ...(settings.noSwaps ? { noSwaps: true } : {}), createdBy, createdAt: Date.now(), winner: null,
   };
   const fail = (e) => toast(`Sync problem: ${e.message}`, 'error');
   if (settings.mode === 'endless') {
@@ -152,13 +155,13 @@ async function createGame(settings, createdBy) {
       freeCenter: settings.freeCenter,
       sameCard: settings.sameCard,
       card: settings.sameCard
-        ? G.generateCard({ size: settings.size, difficulty: settings.difficulty, freeCenter: settings.freeCenter, pool: poolFor(settings) })
+        ? G.generateCard({ size: settings.size, difficulty: settings.difficulty, freeCenter: settings.freeCenter, pool: poolFor(settings), backups: backupCount(settings) })
         : null,
     };
     store.put('games', code, game).catch(fail);
     for (const pid of game.players) store.put('boards', `${code}_${pid}`, makeBoard(game, pid)).catch(fail);
   } else {
-    const card = G.generateCard({ size: settings.size, difficulty: settings.difficulty, pool: poolFor(settings) });
+    const card = G.generateCard({ size: settings.size, difficulty: settings.difficulty, pool: poolFor(settings), backups: backupCount(settings) });
     const game = { ...base, coop: !!settings.coop, connect: settings.connect, items: card.items, claims: {}, backups: {} };
     for (const pid of game.players) game.backups[pid] = versusBackups(game);
     store.put('games', code, game).catch(fail);
@@ -194,6 +197,7 @@ async function confirmDelete(code) {
 const settingsFrom = (g) => ({
   mode: g.mode, size: g.size, difficulty: g.difficulty, players: g.players,
   winRule: g.winRule, minutes: g.minutes || 60, freeCenter: g.freeCenter, sameCard: g.sameCard, connect: g.connect, coop: !!g.coop, mix: mixOf(g), tier: g.lastPick?.tier, tiers: g.tiers,
+  backupCount: g.mode === 'endless' ? undefined : backupCount(g), noSwaps: !!g.noSwaps,
   slots: g.mode === 'endless' ? G.endlessState(g).slots : undefined, turnMode: g.mode === 'endless' ? G.endlessState(g).turnMode : undefined,
 });
 
@@ -409,6 +413,11 @@ function SettingsScreen({ me }) {
     </main>`;
 }
 
+function SwapsToggle({ swaps, setSwaps }) {
+  return html`<label class="toggle"><input type="checkbox" checked=${swaps} onChange=${(e) => setSwaps(e.target.checked)} />
+    <span>Allow swaps <small>(tap an item to pick from 3 others with the same stars)</small></span></label>`;
+}
+
 function Choice({ options, value, onChange }) {
   return html`<div class="choice">
     ${options.map(([v, label, sub]) => html`
@@ -434,6 +443,8 @@ function NewGame({ mode, me, players }) {
   const [coop, setCoop] = useState(false);
   const [mix, setMix] = useState('all');
   const [tiers, setTiers] = useState(ALL_TIERS);
+  const [backups, setBackups] = useState(null); // null = follow the board size
+  const [swaps, setSwaps] = useState(true);
   const toggleTier = (t) => setTiers((ts) => (ts.includes(t) ? (ts.length > 1 ? ts.filter((x) => x !== t) : ts) : ALL_TIERS.filter((x) => x === t || ts.includes(x))));
   const [selected, setSelected] = useState([me.id]);
   const [busy, setBusy] = useState(false);
@@ -448,7 +459,8 @@ function NewGame({ mode, me, players }) {
   const create = async () => {
     setBusy(true);
     try {
-      const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, mix, tier, slots, turnMode, tiers: isEndless ? null : tiers, players: selected }, me.id);
+      const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, mix, tier, slots, turnMode, tiers: isEndless ? null : tiers,
+        backupCount: nb, noSwaps: !swaps, players: selected }, me.id);
       go(`/g/${code}`);
     } catch (e) {
       toast(`Couldn't create game: ${e.message}`, 'error');
@@ -456,7 +468,7 @@ function NewGame({ mode, me, players }) {
     }
   };
 
-  const nb = G.backupsFor(size);
+  const nb = backups ?? G.backupsFor(size);
   const pool = poolFor({ mix, tiers: isEndless ? null : tiers });
   const tooFew = isEndless ? !pool.length : pool.length < size * size + nb;
   return html`
@@ -476,11 +488,11 @@ function NewGame({ mode, me, players }) {
         <h2>Starting difficulty</h2>
         <${Choice} value=${tier} onChange=${setTier} options=${ENDLESS_TIERS} />
         <p class="muted small">Whoever snaps an item picks the difficulty and type of the one that replaces it.</p>
+        <${SwapsToggle} swaps=${swaps} setSwaps=${setSwaps} />
       </section>` : html`<section class="panel">
         <h2>Board size</h2>
         <${Choice} value=${size} onChange=${setSize}
           options=${G.SIZES.map((s) => [s, `${s}×${s}`, `${s * s} squares`])} />
-        <p class="muted small">Each player gets <b>${nb} backup${nb > 1 ? 's' : ''}</b> to swap in.</p>
 
         <h2>What's on the board?</h2>
         <${Choice} value=${mix} onChange=${setMix}
@@ -521,6 +533,12 @@ function NewGame({ mode, me, players }) {
             <${Choice} value=${connect} onChange=${setConnect}
               options=${Array.from({ length: size - 2 }, (_, i) => i + 3).map((k) => [k, `${k} in a row`])} />`}
         `}
+
+        <h2>Backups</h2>
+        <${Choice} value=${nb} onChange=${setBackups} options=${[0, 1, 2, 3, 4, 5].map((k) => [k, String(k)])} />
+        <p class="muted small">${nb ? `Each player gets ${nb} backup item${nb === 1 ? '' : 's'} to swap onto their board.` : 'No backup items this game.'}</p>
+
+        <${SwapsToggle} swaps=${swaps} setSwaps=${setSwaps} />
       </section>`}
 
       <section class="panel">
@@ -1558,7 +1576,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
             swapTarget=${swapIdx !== null && canEdit && !m && item.tier !== 'free'} onClick=${() => tapSquare(i)} />`;
         })}
       <//>
-      ${mine && html`<${BackupTray} backups=${board.backups} swapIdx=${swapIdx} setSwapIdx=${setSwapIdx} canUse=${canEdit} />`}
+      ${mine && backupCount(game) > 0 && html`<${BackupTray} backups=${board.backups} swapIdx=${swapIdx} setSwapIdx=${setSwapIdx} canUse=${canEdit} />`}
     ` : html`<p class="muted center">No board yet.</p>`}
 
     ${open !== null && board && html`<${SquareModal}
@@ -1569,7 +1587,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       onFile=${markSquare} onNoPhoto=${!openMark ? () => markSquare(null) : null}
       onRemove=${canEdit && openMark ? unmark : null} removeLabel=${openMark?.photo ? 'Remove photo' : 'Unmark square'}
       onEdit=${canEdit && !openMark ? editSquare : null}
-      getAlts=${altsFor} onReroll=${canEdit && !openMark ? reroll : null} rerolls=${board.rerolls || 0}
+      getAlts=${altsFor} onReroll=${canEdit && !openMark && !game.noSwaps ? reroll : null} rerolls=${board.rerolls || 0}
       onBlock=${canEdit && !openMark ? block : null}
       note=${!openMark && !canEdit ? (timeUp ? "Time's up!" : 'Not found yet.') : null}
       onClose=${() => setOpen(null)} />`}
@@ -1746,7 +1764,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       })}
     <//>
 
-    ${isPlayer && !over && html`<${BackupTray} backups=${myBackups || []} swapIdx=${swapIdx} setSwapIdx=${setSwapIdx} canUse=${true} />`}
+    ${isPlayer && !over && backupCount(game) > 0 && html`<${BackupTray} backups=${myBackups || []} swapIdx=${swapIdx} setSwapIdx=${setSwapIdx} canUse=${true} />`}
 
     ${open !== null && html`<${SquareModal}
       item=${game.items[open]}
@@ -1757,7 +1775,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       onFile=${claim} onNoPhoto=${!openClaim ? () => claim(null) : null}
       onRemove=${openClaim?.by === me.id && !over ? unclaim : null} removeLabel=${coop ? 'Unmark square' : 'Undo my claim'}
       onEdit=${isPlayer && !over && !openClaim ? editSquare : null}
-      getAlts=${altsFor} onReroll=${isPlayer && !over && !openClaim ? reroll : null} rerolls=${game.rerolls?.[me.id] || 0}
+      getAlts=${altsFor} onReroll=${isPlayer && !over && !openClaim && !game.noSwaps ? reroll : null} rerolls=${game.rerolls?.[me.id] || 0}
       onBlock=${isPlayer && !over && !openClaim ? block : null}
       note=${!openClaim && over ? 'Game over.' : !openClaim && !isPlayer ? `Join the game to ${coop ? 'help out' : 'claim squares'}.` : null}
       onClose=${() => setOpen(null)} />`}
@@ -1912,11 +1930,11 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
             ${canSnap && (single ? html`<div class="endless-actions">
               <${PhotoButtons} label="Snap it" onFile=${(f) => capture(slot, f).catch((e) => toast(e.message, 'error'))}
                 onNoPhoto=${() => capture(slot, null).catch((e) => toast(e.message, 'error'))} />
-              <${SwapChoices} item=${slot.item} getAlts=${() => altsFor(slot)} onPick=${(it) => reroll(slot, it)} rerolls=${game.rerolls?.[me.id] || 0} />
+              ${!game.noSwaps && html`<${SwapChoices} item=${slot.item} getAlts=${() => altsFor(slot)} onPick=${(it) => reroll(slot, it)} rerolls=${game.rerolls?.[me.id] || 0} />`}
               <button class="btn small ghost" onClick=${() => confirm(`Block "${slot.item.text}"? It gets swapped out now and turned off in your item list for future games.`) && block(slot)}>🚫 Block this item</button>
             </div>` : html`<div class="row slot-actions">
               <button class="btn primary" onClick=${() => setSnapId(slot.id)}>📸 Snap</button>
-              <button class="btn ghost" onClick=${() => setSnapId(slot.id)}>🎲 Swap</button>
+              ${!game.noSwaps && html`<button class="btn ghost" onClick=${() => setSnapId(slot.id)}>🎲 Swap</button>`}
             </div>`)}
           </div>`)}
       </div>
@@ -1944,7 +1962,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
     ${snapSlot && html`<${SquareModal} item=${snapSlot.item} found=${false} canAct=${canSnap} actionLabel="Snap it"
       onFile=${(f) => capture(snapSlot, f)} onNoPhoto=${() => capture(snapSlot, null)}
-      getAlts=${() => altsFor(snapSlot)} onReroll=${canSnap ? (it) => reroll(snapSlot, it) : null} rerolls=${game.rerolls?.[me.id] || 0}
+      getAlts=${() => altsFor(snapSlot)} onReroll=${canSnap && !game.noSwaps ? (it) => reroll(snapSlot, it) : null} rerolls=${game.rerolls?.[me.id] || 0}
       onBlock=${canSnap ? () => { block(snapSlot); setSnapId(null); } : null}
       onClose=${() => setSnapId(null)} />`}
     ${viewing && html`<${SquareModal} item=${viewing.item} photoId=${viewing.photo} found=${true}

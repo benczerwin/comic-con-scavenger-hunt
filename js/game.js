@@ -48,11 +48,11 @@ export function rerollItem(item, { exclude = [], pool = ITEMS }) {
 }
 
 /** Build a card: n*n squares (center FREE if requested & odd) + backups. */
-export function generateCard({ size, difficulty = 'balanced', freeCenter = false, exclude = [], pool = ITEMS }) {
+export function generateCard({ size, difficulty = 'balanced', freeCenter = false, exclude = [], pool = ITEMS, backups: backupCount }) {
   const mix = DIFFICULTY[difficulty] || DIFFICULTY.balanced;
   const hasFree = freeCenter && size % 2 === 1;
   const total = size * size - (hasFree ? 1 : 0);
-  const nBackups = backupsFor(size);
+  const nBackups = backupCount ?? backupsFor(size);
 
   const skip = new Set(exclude);
   const pools = { e: [], m: [], h: [] };
