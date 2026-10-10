@@ -6,6 +6,7 @@ export const DIFFICULTY = {
   chill: { label: 'Chill', e: 0.6, m: 0.3, h: 0.1, blurb: 'Mostly easy spots' },
   balanced: { label: 'Balanced', e: 0.45, m: 0.35, h: 0.2, blurb: 'A good mix' },
   hardcore: { label: 'Hardcore', e: 0.25, m: 0.4, h: 0.35, blurb: 'Hunt the rare ones' },
+  random: { label: 'Random', random: true, blurb: 'Any star, any square' },
 };
 
 export const WIN_RULES = {
@@ -52,8 +53,16 @@ export function generateCard({ size, difficulty = 'balanced', freeCenter = false
   const pools = { e: [], m: [], h: [] };
   for (const it of shuffle(pool)) if (!skip.has(it.text)) pools[it.tier].push(it);
 
-  const want = { h: Math.round(total * mix.h), m: Math.round(total * mix.m) };
-  want.e = total - want.h - want.m;
+  let want;
+  if (mix.random) {
+    // Each square rolls its own star level from the levels that have items.
+    const live = ['e', 'm', 'h'].filter((t) => pools[t].length);
+    want = { e: 0, m: 0, h: 0 };
+    for (let i = 0; i < total && live.length; i++) want[live[Math.floor(Math.random() * live.length)]]++;
+  } else {
+    want = { h: Math.round(total * mix.h), m: Math.round(total * mix.m) };
+    want.e = total - want.h - want.m;
+  }
 
   const picked = [];
   for (const t of ['e', 'm', 'h']) picked.push(...pools[t].splice(0, want[t]));
