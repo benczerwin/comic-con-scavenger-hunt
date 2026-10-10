@@ -1,4 +1,4 @@
-import { html, render, useState, useEffect, useMemo, useRef } from '../vendor/htm-preact.js';
+import { html, render, useState, useEffect, useMemo, useRef, createContext, useContext } from '../vendor/htm-preact.js';
 import * as store from './store.js';
 import { EMBLEMS, emblemById, emblemSVG } from './data/emblems.js';
 import { CATEGORY_LABELS, ITEMS, itemKind } from './data/items.js';
@@ -773,7 +773,10 @@ function BackupTray({ backups, swapIdx, setSwapIdx, canUse }) {
     </section>`;
 }
 
-const FACING_KEY = 'nycc-hunt:facing';
+const FACING_KEY = 'nycc-hunt:facing'; // last choice, used as the default for new games
+const facingKey = (code) => `${FACING_KEY}:${code}`;
+/** Which way the camera opens in the current game ('user' = selfie, 'environment' = back). */
+const CameraFacing = createContext('user');
 const WIDE_KEY = 'nycc-hunt:wide';
 const SAVE_KEY = 'nycc-hunt:save-photos';
 const hasLiveCamera = !!navigator.mediaDevices?.getUserMedia;
@@ -786,7 +789,7 @@ const savePref = (key, val) => { try { localStorage.setItem(key, val); } catch {
 function CameraView({ onFile, onClose, onFallback }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
-  const [facing, setFacing] = useState(() => loadPref(FACING_KEY, 'user'));
+  const [facing, setFacing] = useState(useContext(CameraFacing));
   const [wide, setWide] = useState(() => loadPref(WIDE_KEY, '1') === '1');
   const [save, setSave] = useState(() => loadPref(SAVE_KEY, '1') === '1');
   const [shot, setShot] = useState(null); // { url, blob }
@@ -818,7 +821,6 @@ function CameraView({ onFile, onClose, onFallback }) {
         ? 'Camera access was blocked. Allow it in your browser settings, or use the phone camera instead.'
         : "Couldn't start the camera on this device.");
     });
-    savePref(FACING_KEY, facing);
     savePref(WIDE_KEY, wide ? '1' : '0');
     return () => { cancelled = true; };
   }, [facing, wide]);
@@ -894,6 +896,7 @@ function saveDataUrl(dataUrl, name) {
 }
 
 function PhotoButtons({ onFile, onNoPhoto, label = 'Take photo' }) {
+  const capture = useContext(CameraFacing) === 'environment' ? 'environment' : 'user';
   const [camera, setCamera] = useState(false);
   const nativeRef = useRef(null);
   const handle = (e) => {
@@ -906,12 +909,12 @@ function PhotoButtons({ onFile, onNoPhoto, label = 'Take photo' }) {
       ${hasLiveCamera
         ? html`<button class="btn primary huge" onClick=${() => setCamera(true)}>📸 ${label}</button>`
         : html`<label class="btn primary huge">📸 ${label}
-            <input type="file" accept="image/*" capture="user" onChange=${handle} hidden /></label>`}
+            <input type="file" accept="image/*" capture=${capture} onChange=${handle} hidden /></label>`}
       <div class="row two">
         <label class="btn ghost">🖼️ Library
           <input type="file" accept="image/*" onChange=${handle} hidden /></label>
         ${hasLiveCamera && html`<label class="btn ghost">📱 Phone camera
-          <input ref=${nativeRef} type="file" accept="image/*" capture="user" onChange=${handle} hidden /></label>`}
+          <input ref=${nativeRef} type="file" accept="image/*" capture=${capture} onChange=${handle} hidden /></label>`}
       </div>
       ${onNoPhoto && html`<button class="btn ghost" onClick=${onNoPhoto}>✅ Found it, no photo</button>`}
       ${camera && html`<${CameraView} onFile=${onFile} onClose=${() => setCamera(false)}
@@ -1038,6 +1041,8 @@ function GameScreen({ code, me, playersById }) {
   const thumbs = useMemo(() => Object.fromEntries((thumbList || []).map((t) => [t.id, t])), [thumbList]);
   const [joining, setJoining] = useState(false);
   const [recap, setRecap] = useState(null);
+  const [facing, setFacing] = useState(() => loadPref(facingKey(code), loadPref(FACING_KEY, 'user')));
+  const pickFacing = (f) => { setFacing(f); savePref(facingKey(code), f); savePref(FACING_KEY, f); };
 
   const makeRecap = async (featuredId) => {
     if (!game) return;
@@ -1119,7 +1124,14 @@ function GameScreen({ code, me, playersById }) {
       ${!isPlayer && html`
         <div class="banner join-banner">You're watching this game.
           <button class="btn primary small" disabled=${joining} onClick=${join}>${joining ? 'Joining…' : 'Join game'}</button></div>`}
-      <${Screen} key=${isPlayer ? 'player' : 'watcher'} game=${game} me=${me} playersById=${playersById} thumbs=${thumbs} isPlayer=${isPlayer} onRematch=${rematch} />
+      ${isPlayer && html`<div class="facing-pick">
+        <span>Camera opens to</span>
+        <button class=${'pill' + (facing === 'user' ? ' sel' : '')} onClick=${() => pickFacing('user')}>🤳 Selfie</button>
+        <button class=${'pill' + (facing === 'environment' ? ' sel' : '')} onClick=${() => pickFacing('environment')}>📷 Back</button>
+      </div>`}
+      <${CameraFacing.Provider} value=${facing}>
+        <${Screen} key=${isPlayer ? 'player' : 'watcher'} game=${game} me=${me} playersById=${playersById} thumbs=${thumbs} isPlayer=${isPlayer} onRematch=${rematch} />
+      <//>
       <div class="game-footer">
         <button class="btn small" onClick=${makeRecap}>🖼️ Game recap</button>
         <button class="btn small danger" onClick=${async () => { if (await confirmDelete(code)) go('/'); }}>🗑️ Delete game</button>

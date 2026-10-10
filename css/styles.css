@@ -495,3 +495,6 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .endless-actions .row.two .btn { padding: 12px; font-size: 1rem; }
 .photo-btns + .row.two { margin-top: 2px; }
 .more-games { display: block; margin: 10px auto 0; }
+
+.facing-pick { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; font-weight: 800; font-size: 0.85rem; }
+.facing-pick span { color: var(--muted); margin-right: 2px; }
