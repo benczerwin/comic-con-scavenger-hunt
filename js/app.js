@@ -295,6 +295,12 @@ function Home({ me, playersById }) {
         </div>
       </section>
 
+      <a class="panel items-link" href="#/stats">
+        <span class="icon">📊</span>
+        <span class="grow"><b>Player stats</b><small>Wins, finds, rare spots & everyone's photos</small></span>
+        <span>›</span>
+      </a>
+
       <a class="panel items-link" href="#/items">
         <span class="icon">📝</span>
         <span class="grow"><b>Edit hunt items</b><small>${itemPool.length} items on · turn ideas off or add your own</small></span>
@@ -417,6 +423,135 @@ function NewGame({ mode, me, players }) {
       <p class="muted small center">Drawing from <b>${pool.length}</b> ${charsOnly ? 'character ' : ''}hunt items · <a href="#/items">edit list</a></p>
       ${tooFew && html`<div class="banner warn">Not enough items turned on for a ${size}×${size} board. Turn more on in the item list${charsOnly ? ' or pick Everything' : ''}.</div>`}
       <button class="btn primary huge" disabled=${busy || tooFew} onClick=${create}>${busy ? 'Creating…' : 'Start the hunt!'}</button>
+    </main>`;
+}
+
+// ───────────────────────── player stats ─────────────────────────
+
+const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '–');
+
+function StatsScreen({ me, players, playersById, focus }) {
+  const games = useWatch((cb) => store.watchAll('games', cb), []);
+  const boards = useWatch((cb) => store.watchAll('boards', cb), []);
+  if (games === undefined || boards === undefined) return html`<main class="screen"><p class="muted center">Crunching numbers…</p></main>`;
+
+  const stats = G.playerStats(games, boards);
+  const ranked = (players || []).filter((p) => stats[p.id])
+    .sort((a, b) => stats[b.id].wins - stats[a.id].wins || stats[b.id].found - stats[a.id].found);
+
+  if (focus && playersById[focus]) return html`<${PlayerStats} p=${playersById[focus]} s=${stats[focus]} me=${me} playersById=${playersById} />`;
+
+  const most = (key) => {
+    const top = ranked.slice().sort((a, b) => stats[b.id][key] - stats[a.id][key])[0];
+    return top && stats[top.id][key] ? top : null;
+  };
+  const awards = [
+    ['🏆', 'Most wins', most('wins'), 'wins'],
+    ['🔍', 'Most finds', most('found'), 'found'],
+    ['📸', 'Most photos', most('photos'), 'photos'],
+    ['💎', 'Rare hunter (★★★)', ranked.slice().sort((a, b) => stats[b.id].tiers.h - stats[a.id].tiers.h)[0], null],
+    ['🎲', 'Reroll addict', most('rerolls'), 'rerolls'],
+  ].filter(([, , p]) => p);
+
+  return html`
+    <main class="screen">
+      <nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>
+      <h1 class="title">Player stats</h1>
+      ${!ranked.length && html`<div class="panel center muted">No games played yet. Go hunt!</div>`}
+      ${ranked.length > 1 && html`<section class="panel">
+        <h2>Bragging rights</h2>
+        <div class="awards">
+          ${awards.map(([icon, label, p, key]) => {
+            const v = key ? stats[p.id][key] : stats[p.id].tiers.h;
+            return v ? html`<a class="award" href="#/stats/${p.id}" key=${label}>
+              <span class="aw-icon">${icon}</span><small>${label}</small>
+              <b><${Emblem} id=${p.emblem} size=${20} /> ${firstName(p)}</b><span class="muted small">${v}</span></a>` : null;
+          })}
+        </div>
+      </section>`}
+      ${ranked.map((p, k) => {
+        const s = stats[p.id];
+        return html`<a class="panel stat-card" href="#/stats/${p.id}" key=${p.id}>
+          <div class="stat-head">
+            <span class="rank">${k + 1}</span>
+            <${Emblem} id=${p.emblem} size=${44} />
+            <span class="grow"><b>${p.name}${p.id === me.id ? ' (you)' : ''}</b>
+              <small>${s.games} game${s.games === 1 ? '' : 's'} · ${pct(s.wins, s.finished)} win rate</small></span>
+            <span>›</span>
+          </div>
+          <div class="stat-grid">
+            <div><b>${s.wins}</b><small>wins</small></div>
+            <div><b>${s.found}</b><small>finds</small></div>
+            <div><b>${s.photos}</b><small>photos</small></div>
+            <div><b>${s.tiers.h}</b><small>★★★ finds</small></div>
+          </div>
+        </a>`;
+      })}
+    </main>`;
+}
+
+function PlayerStats({ p, s, me, playersById }) {
+  const thumbs = useWatch((cb) => store.watchWhere('thumbs', 'by', '==', p.id, cb), [p.id]);
+  if (!s) return html`<main class="screen"><nav class="topbar"><a class="back" href="#/stats">‹ All players</a></nav>
+    <div class="panel center muted">${p.name} hasn't played yet.</div></main>`;
+  const cats = Object.entries(s.cats).sort((a, b) => b[1] - a[1]);
+  const maxCat = cats[0]?.[1] || 1;
+  const result = (g) => g.winner === p.id ? '🏆 Won' : g.winner === 'team' ? '🎉 Team blackout'
+    : g.winner === 'draw' ? '🤝 Draw' : g.winner ? `Lost to ${firstName(playersById[g.winner])}` : 'In progress';
+  const photos = (thumbs || []).slice().sort((a, b) => (b.at || 0) - (a.at || 0));
+  return html`
+    <main class="screen">
+      <nav class="topbar"><a class="back" href="#/stats">‹ All players</a></nav>
+      <div class="player-hero">
+        <${Emblem} id=${p.emblem} size=${72} />
+        <div><h1 class="title">${p.name}</h1>
+          <p class="muted">${s.games} game${s.games === 1 ? '' : 's'}${p.id === me.id ? ' · that\'s you!' : ''}</p></div>
+      </div>
+
+      <section class="panel">
+        <div class="stat-grid big">
+          <div><b>${s.wins}</b><small>wins</small></div>
+          <div><b>${pct(s.wins, s.finished)}</b><small>win rate</small></div>
+          <div><b>${s.found}</b><small>finds</small></div>
+          <div><b>${s.photos}</b><small>photos</small></div>
+          <div><b>${s.lines}</b><small>bingo lines</small></div>
+          <div><b>${s.blackouts}</b><small>blackouts</small></div>
+          <div><b>${s.teamWins}</b><small>co-op wins</small></div>
+          <div><b>${s.rerolls}</b><small>rerolls</small></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Finds by difficulty</h2>
+        <div class="stat-grid">
+          <div><b>${s.tiers.e}</b><small>★ easy</small></div>
+          <div><b>${s.tiers.m}</b><small>★★ medium</small></div>
+          <div><b>${s.tiers.h}</b><small>★★★ hard</small></div>
+        </div>
+        ${cats.length > 0 && html`<h2>Favorite kinds of finds</h2>
+          <div class="bars">${cats.map(([c, n]) => html`<div class="bar-row" key=${c}>
+            <span>${CATEGORY_LABELS[c] || c}</span>
+            <span class="bar"><span class=${`cat-${c}`} style=${`width:${(n / maxCat) * 100}%`}></span></span>
+            <b>${n}</b></div>`)}</div>`}
+      </section>
+
+      <section class="panel">
+        <h2>Games</h2>
+        <div class="game-list">
+          ${s.recent.map((g) => html`<a class="game-row" href="#/g/${g.code}" key=${g.code}>
+            <span class="tag ${g.mode}">${g.mode === 'bingo' ? 'BINGO' : g.coop ? 'CO-OP' : 'VS'}</span>
+            <span class="grow"><b>${g.code}</b> · ${g.size}×${g.size}
+              <small>${new Date(g.createdAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} · ${result(g)}</small></span>
+          </a>`)}
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Photos${photos.length ? ` (${photos.length})` : ''}</h2>
+        ${thumbs === undefined ? html`<p class="muted">Loading…</p>`
+          : !photos.length ? html`<p class="muted">No photos yet.</p>`
+          : html`<div class="photo-grid">${photos.map((t) => html`<a href="#/g/${t.gameId}" key=${t.id}><img src=${t.thumb} alt="" loading="lazy" /></a>`)}</div>`}
+      </section>
     </main>`;
 }
 
@@ -1296,6 +1431,7 @@ function App() {
   let body;
   if (players === undefined) body = html`<main class="screen"><p class="muted center">Loading…</p></main>`;
   else if (!me || route[0] === 'profile') body = html`<${ProfileScreen} players=${players} me=${me} onPick=${pick} onSwitch=${switchPlayer} />`;
+  else if (route[0] === 'stats') body = html`<${StatsScreen} me=${me} players=${players} playersById=${playersById} focus=${route[1]} key=${route[1] || 'all'} />`;
   else if (route[0] === 'items') body = html`<${ItemsScreen} bank=${bank} />`;
   else if (route[0] === 'new') body = html`<${NewGame} mode=${route[1] === 'versus' ? 'versus' : 'bingo'} me=${me} players=${players} key=${route[1]} />`;
   else if (route[0] === 'g' && route[1]) body = html`<${GameScreen} code=${route[1].toUpperCase()} me=${me} playersById=${playersById} key=${route[1]} />`;

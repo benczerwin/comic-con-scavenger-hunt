@@ -140,3 +140,49 @@ export const fmtDuration = (ms) => {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
   return h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${m}:${String(sec).padStart(2, '0')}`;
 };
+
+/** Lifetime stats per player across every game. games: all game docs; boards: all bingo boards. */
+export function playerStats(games, boards) {
+  const byCode = Object.fromEntries(games.map((g) => [g.code, g]));
+  const stats = {};
+  const S = (pid) => (stats[pid] ??= {
+    games: 0, finished: 0, wins: 0, teamWins: 0, found: 0, photos: 0, lines: 0, blackouts: 0, rerolls: 0,
+    tiers: { e: 0, m: 0, h: 0 }, cats: {}, recent: [],
+  });
+  const tally = (s, item, photo) => {
+    if (!item || item.tier === 'free') return;
+    s.found++;
+    if (photo) s.photos++;
+    if (s.tiers[item.tier] !== undefined) s.tiers[item.tier]++;
+    s.cats[item.cat] = (s.cats[item.cat] || 0) + 1;
+  };
+
+  for (const g of games) {
+    for (const pid of g.players || []) {
+      const s = S(pid);
+      s.games++;
+      if (g.winner) s.finished++;
+      if (g.winner === pid) s.wins++;
+      if (g.winner === 'team') s.teamWins++;
+      s.recent.push(g);
+    }
+    if (g.mode !== 'bingo') {
+      for (const [i, c] of Object.entries(g.claims || {})) tally(S(c.by), g.items?.[i], c.photo);
+      for (const [pid, n] of Object.entries(g.rerolls || {})) S(pid).rerolls += n;
+    }
+  }
+  for (const b of boards) {
+    if (!byCode[b.gameId]) continue; // board of a deleted game
+    const s = S(b.playerId);
+    for (const [i, m] of Object.entries(b.marks || {})) tally(s, b.items?.[i], m.photo);
+    const sc = scoreBoard(b);
+    s.lines += sc.lines;
+    if (sc.blackout) s.blackouts++;
+    s.rerolls += b.rerolls || 0;
+  }
+  for (const s of Object.values(stats)) {
+    s.recent.sort((a, b) => b.createdAt - a.createdAt);
+    s.topCat = Object.entries(s.cats).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  }
+  return stats;
+}
