@@ -1,5 +1,5 @@
 // Network-first app shell cache: always fresh when online, still opens when the con Wi-Fi dies.
-const CACHE = 'nycc-hunt-v2';
+const CACHE = 'nycc-hunt-v3';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil((async () => {

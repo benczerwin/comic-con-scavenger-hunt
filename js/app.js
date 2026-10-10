@@ -811,7 +811,7 @@ function CameraView({ onFile, onClose, onFallback }) {
         aria-pressed=${wide}>${wide ? '⤡ Wide' : '⤢ Normal'}</button>`}
       <div class="camera-bar">
         ${shot ? html`
-          <button class="btn ghost" onClick=${retake}>↺ Retake</button>
+          <button class="btn ghost cam-retake" style="color:#141414;background:#fff" onClick=${retake}>↺ Retake</button>
           <button class="btn primary" onClick=${use}>✓ Use photo</button>
         ` : html`
           <span class="cam-spacer"></span>
