@@ -4,6 +4,7 @@ import { EMBLEMS, emblemById, emblemSVG } from './data/emblems.js';
 import { CATEGORY_LABELS, ITEMS } from './data/items.js';
 import * as G from './game.js';
 import { processPhoto } from './photo.js';
+import { renderRecap } from './recap.js';
 
 // ───────────────────────── helpers & hooks ─────────────────────────
 
@@ -152,7 +153,7 @@ const settingsFrom = (g) => ({
 
 // ───────────────────────── screens ─────────────────────────
 
-function ProfileScreen({ players, me, onPick }) {
+function ProfileScreen({ players, me, onPick, onSwitch }) {
   const [name, setName] = useState(me?.name || '');
   const [emblem, setEmblem] = useState(me?.emblem || EMBLEMS[Math.floor(Math.random() * EMBLEMS.length)].id);
   const others = (players || []).filter((p) => p.id !== me?.id);
@@ -165,6 +166,16 @@ function ProfileScreen({ players, me, onPick }) {
     store.put('players', id, { name: n.slice(0, 24), emblem, createdAt: me?.createdAt || Date.now() })
       .catch((e) => toast(`Sync problem: ${e.message}`, 'error'));
     onPick(id);
+  };
+
+  const removePlayer = async (p) => {
+    const mine = p.id === me?.id;
+    if (!confirm(`Remove ${mine ? 'yourself' : p.name}? Their past games stay, but they'll show as "Someone".`)) return;
+    try {
+      await store.remove('players', p.id);
+      toast(`Removed ${p.name}`);
+      if (mine) onSwitch();
+    } catch (e) { toast(`Couldn't remove: ${e.message}`, 'error'); }
   };
 
   return html`
@@ -198,6 +209,17 @@ function ProfileScreen({ players, me, onPick }) {
           <button class="btn primary" onClick=${save}>${me ? 'Save' : "Let's hunt!"}</button>
         </div>
       </section>
+      ${(players || []).length > 0 && html`
+        <section class="panel">
+          <h2>All players</h2>
+          ${players.map((p) => html`
+            <div class="item-row" key=${p.id}>
+              <${Emblem} id=${p.emblem} size=${34} />
+              <span class="grow">${p.name}${p.id === me?.id ? ' (you)' : ''}</span>
+              <button class="del" aria-label="Remove ${p.name}" onClick=${() => removePlayer(p)}>🗑️</button>
+            </div>`)}
+          ${me && html`<div class="row end"><button class="btn small ghost" onClick=${onSwitch}>Switch player on this phone</button></div>`}
+        </section>`}
     </main>`;
 }
 
@@ -559,7 +581,7 @@ function PhotoButtons({ onFile, label = 'Take photo' }) {
   return html`
     <div class="photo-btns">
       <label class="btn primary huge">📸 ${label}
-        <input type="file" accept="image/*" capture="environment" onChange=${handle} hidden /></label>
+        <input type="file" accept="image/*" capture="user" onChange=${handle} hidden /></label>
       <label class="btn ghost">🖼️ Choose from library
         <input type="file" accept="image/*" onChange=${handle} hidden /></label>
     </div>`;
@@ -634,8 +656,32 @@ function WinBanner({ text, sub, onRematch }) {
   return html`<div class="win-banner">
     <div class="pow">${text}</div>
     ${sub && html`<p>${sub}</p>`}
-    ${onRematch && html`<button class="btn small" onClick=${onRematch}>Rematch</button>`}
+    <div class="row center-row">
+      <button class="btn small primary" onClick=${() => dispatchEvent(new Event('nycc:recap'))}>🖼️ Game recap</button>
+      ${onRematch && html`<button class="btn small" onClick=${onRematch}>Rematch</button>`}
+    </div>
   </div>`;
+}
+
+function RecapModal({ recap, code, onClose }) {
+  const file = recap.blob && new File([recap.blob], `nycc-hunt-${code}.png`, { type: 'image/png' });
+  const canShare = file && navigator.canShare?.({ files: [file] });
+  const share = async () => {
+    try { await navigator.share({ files: [file], title: 'NYCC Photo Hunt' }); } catch {}
+  };
+  return html`
+    <div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && onClose()}>
+      <div class="modal recap">
+        <button class="x" onClick=${onClose} aria-label="Close">×</button>
+        <h2 class="recap-title">Game recap</h2>
+        ${recap.url ? html`
+          <img class="recap-img" src=${recap.url} alt="Game recap" />
+          <p class="muted small center">Tip: press and hold the image to save it to Photos.</p>
+          ${canShare && html`<button class="btn primary huge" onClick=${share}>📤 Save or share</button>`}
+          <a class="btn ghost" href=${recap.url} download=${`nycc-hunt-${code}.png`}>⬇️ Download</a>
+        ` : html`<div class="recap-loading"><div class="spinner"></div>Drawing your comic…</div>`}
+      </div>
+    </div>`;
 }
 
 // ───────────────────────── game screens ─────────────────────────
@@ -645,6 +691,25 @@ function GameScreen({ code, me, playersById }) {
   const thumbList = useWatch((cb) => store.watchWhere('thumbs', 'gameId', '==', code, cb), [code]);
   const thumbs = useMemo(() => Object.fromEntries((thumbList || []).map((t) => [t.id, t])), [thumbList]);
   const [joining, setJoining] = useState(false);
+  const [recap, setRecap] = useState(null);
+
+  const makeRecap = async () => {
+    if (!game) return;
+    setRecap({});
+    try {
+      const boards = game.mode === 'bingo' ? await store.getWhere('boards', 'gameId', '==', code) : [];
+      const blob = await renderRecap({ game, boards, thumbs, playersById });
+      setRecap({ blob, url: URL.createObjectURL(blob) });
+    } catch (e) {
+      setRecap(null);
+      toast(`Couldn't make the recap: ${e.message}`, 'error');
+    }
+  };
+  const closeRecap = () => { if (recap?.url) URL.revokeObjectURL(recap.url); setRecap(null); };
+  useEffect(() => {
+    addEventListener('nycc:recap', makeRecap);
+    return () => removeEventListener('nycc:recap', makeRecap);
+  });
 
   if (game === undefined) return html`<main class="screen"><p class="muted center">Loading game ${code}…</p></main>`;
   if (game === null) return html`
@@ -699,10 +764,12 @@ function GameScreen({ code, me, playersById }) {
       ${!isPlayer && html`
         <div class="banner join-banner">You're watching this game.
           <button class="btn primary small" disabled=${joining} onClick=${join}>${joining ? 'Joining…' : 'Join game'}</button></div>`}
-      <${Screen} game=${game} me=${me} playersById=${playersById} thumbs=${thumbs} isPlayer=${isPlayer} onRematch=${rematch} />
+      <${Screen} key=${isPlayer ? 'player' : 'watcher'} game=${game} me=${me} playersById=${playersById} thumbs=${thumbs} isPlayer=${isPlayer} onRematch=${rematch} />
       <div class="game-footer">
+        <button class="btn small" onClick=${makeRecap}>🖼️ Game recap</button>
         <button class="btn small danger" onClick=${async () => { if (await confirmDelete(code)) go('/'); }}>🗑️ Delete game</button>
       </div>
+      ${recap && html`<${RecapModal} recap=${recap} code=${code} onClose=${closeRecap} />`}
     </main>`;
 }
 
@@ -994,10 +1061,11 @@ function App() {
   itemPool = useMemo(() => G.buildPool(bank), [bank]);
 
   const pick = (id) => { saveMe(id); setMeId(id); if (route[0] === 'profile') go('/'); };
+  const switchPlayer = () => { saveMe(''); setMeId(null); };
 
   let body;
   if (players === undefined) body = html`<main class="screen"><p class="muted center">Loading…</p></main>`;
-  else if (!me || route[0] === 'profile') body = html`<${ProfileScreen} players=${players} me=${me} onPick=${pick} />`;
+  else if (!me || route[0] === 'profile') body = html`<${ProfileScreen} players=${players} me=${me} onPick=${pick} onSwitch=${switchPlayer} />`;
   else if (route[0] === 'items') body = html`<${ItemsScreen} bank=${bank} />`;
   else if (route[0] === 'new') body = html`<${NewGame} mode=${route[1] === 'versus' ? 'versus' : 'bingo'} me=${me} players=${players} key=${route[1]} />`;
   else if (route[0] === 'g' && route[1]) body = html`<${GameScreen} code=${route[1].toUpperCase()} me=${me} playersById=${playersById} key=${route[1]} />`;
