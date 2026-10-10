@@ -267,9 +267,10 @@ function ProfileScreen({ players, me, onPick, onSwitch }) {
 
 function PlayersSheet({ players, me, onRemove, onSwitch, onClose }) {
   useScrollLock();
+  const sheet = useSwipeDown(onClose);
   return html`
     <div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && onClose()}>
-      <div class="modal">
+      <div class="modal" ref=${sheet}>
         <button class="x" onClick=${onClose} aria-label="Close">×</button>
         <h2 class="recap-title">All players</h2>
         <div class="players-list">
@@ -1138,12 +1139,55 @@ function SwapChoices({ item, getAlts, onPick, rerolls = 0 }) {
 }
 
 /** getAlts/onReroll: swap choices for an unfound square. onBlock: swap it out and turn it off for good. */
+/** Swipe a bottom sheet down to dismiss it. Only starts when the sheet is scrolled to the top. */
+function useSwipeDown(onClose) {
+  const ref = useRef(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose; // keep the latest handler without re-binding listeners mid-drag
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let startY = null, dy = 0;
+    const start = (e) => {
+      if (el.scrollTop > 0 || e.touches.length > 1 || e.target.closest('.camera')) { startY = null; return; }
+      startY = e.touches[0].clientY; dy = 0;
+      el.style.transition = 'none';
+    };
+    const move = (e) => {
+      if (startY === null) return;
+      dy = e.touches[0].clientY - startY;
+      if (dy <= 0 || el.scrollTop > 0) { dy = 0; el.style.transform = ''; return; }
+      e.preventDefault(); // drag the sheet instead of scrolling it
+      el.style.transform = `translateY(${dy}px)`;
+    };
+    const end = () => {
+      if (startY === null) return;
+      startY = null;
+      el.style.transition = 'transform 0.2s ease-out';
+      if (dy > 110) { el.style.transform = 'translateY(100%)'; setTimeout(() => closeRef.current(), 180); }
+      else el.style.transform = '';
+    };
+    el.addEventListener('touchstart', start, { passive: true });
+    el.addEventListener('touchmove', move, { passive: false });
+    el.addEventListener('touchend', end);
+    el.addEventListener('touchcancel', end);
+    return () => {
+      el.removeEventListener('touchstart', start);
+      el.removeEventListener('touchmove', move);
+      el.removeEventListener('touchend', end);
+      el.removeEventListener('touchcancel', end);
+    };
+  }, []);
+  return ref;
+}
+
 function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel, onFile, onNoPhoto, onRemove, removeLabel, onEdit,
   getAlts, onReroll, onBlock, rerolls = 0, onClose, note }) {
   const [full, setFull] = useState(null);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   useScrollLock();
+  const sheet = useSwipeDown(onClose);
 
   useEffect(() => {
     setFull(null);
@@ -1161,7 +1205,7 @@ function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel,
 
   return html`
     <div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && onClose()}>
-      <div class="modal">
+      <div class="modal" ref=${sheet}>
         <button class="x" onClick=${onClose} aria-label="Close">×</button>
         <div class="modal-head cat-${item.cat}">
           <span class="icon">${item.icon}</span>
@@ -1225,6 +1269,7 @@ function WinBanner({ text, sub, onRematch }) {
 
 function RecapModal({ recap, code, playersById, onFeature, onClose, title = 'Game recap' }) {
   useScrollLock();
+  const sheet = useSwipeDown(onClose);
   const ext = recap.blob?.type === 'image/jpeg' ? 'jpg' : 'png';
   const file = recap.blob && new File([recap.blob], `nycc-hunt-${code}.${ext}`, { type: recap.blob.type || 'image/png' });
   const canShare = file && navigator.canShare?.({ files: [file] });
@@ -1233,7 +1278,7 @@ function RecapModal({ recap, code, playersById, onFeature, onClose, title = 'Gam
   };
   return html`
     <div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && onClose()}>
-      <div class="modal recap">
+      <div class="modal recap" ref=${sheet}>
         <div class="recap-head">
         <button class="x" onClick=${onClose} aria-label="Close">×</button>
         <h2 class="recap-title">${title}</h2>
@@ -1245,12 +1290,14 @@ function RecapModal({ recap, code, playersById, onFeature, onClose, title = 'Gam
             <${Emblem} id=${playersById[b.playerId]?.emblem} size=${22} /> ${firstName(playersById[b.playerId])}
           </button>`)}
         </div>`}
+        ${recap.url && html`<div class="recap-actions">
+          ${canShare && html`<button class="btn primary" onClick=${share}>📤 Save or share</button>`}
+          <a class="btn ghost" href=${recap.url} download=${`nycc-hunt-${code}.${ext}`}>⬇️ Download</a>
+        </div>`}
         </div>
         ${recap.url ? html`
           <img class="recap-img" src=${recap.url} alt="Game recap" />
-          <p class="muted small center">Tip: press and hold the image to save it to Photos.</p>
-          ${canShare && html`<button class="btn primary huge" onClick=${share}>📤 Save or share</button>`}
-          <a class="btn ghost" href=${recap.url} download=${`nycc-hunt-${code}.${ext}`}>⬇️ Download</a>
+          <p class="muted small center">Tip: you can also press and hold the image to save it to Photos.</p>
         ` : html`<div class="recap-loading"><div class="spinner"></div>${recap.progress || 'Drawing your comic…'}</div>`}
       </div>
     </div>`;
