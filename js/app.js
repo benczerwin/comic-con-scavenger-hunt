@@ -75,9 +75,9 @@ let itemPool = ITEMS;
 const modeTag = (g) => (g.mode === 'bingo' ? 'SOLO' : g.mode === 'endless' ? 'ENDLESS' : g.coop ? 'CO-OP' : 'X-OVER');
 
 const MIXES = {
-  all: { label: 'Everything', blurb: 'Characters, fandom gear, costume details, con moments & challenges' },
-  char: { label: 'Characters only', blurb: 'Specific characters, shows, movies & games', short: 'Characters' },
-  obj: { label: 'Fandom gear', blurb: 'Objects from a franchise: a Pokémon bag, a Star Wars mug…', short: 'Fandom gear' },
+  all: { label: 'Everything', blurb: 'Every kind of item' },
+  char: { label: 'Characters only', blurb: 'Characters, shows & movies', short: 'Characters' },
+  obj: { label: 'Fandom gear', blurb: 'Like a Pokémon bag', short: 'Fandom gear' },
 };
 const mixOf = (g) => g.mix || (g.charsOnly ? 'char' : 'all'); // charsOnly: games made before mixes existed
 const poolFor = (g) => { const m = mixOf(g); return m === 'all' ? itemPool : itemPool.filter((it) => itemKind(it) === m); };
@@ -318,10 +318,10 @@ function Home({ me, playersById }) {
               <a class="game-row" href="#/g/${g.code}">
                 <span class="tag ${g.mode}">${modeTag(g)}</span>
                 <span class="grow">
-                  <b>${g.code}</b> · ${g.mode === 'endless' ? `Endless · ${findCount(g)} find${findCount(g) === 1 ? '' : 's'}`
-                    : `${g.size}×${g.size}${g.mode === 'bingo' ? ` · ${G.WIN_RULES[g.winRule]?.label}` : g.coop ? ' · team blackout' : ` · connect ${g.connect}`}`}
-                  <small>${new Date(g.createdAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
-                    ${result}</small>
+                  <b>${g.code}</b>
+                  <small>${g.mode === 'endless' ? `${findCount(g)} find${findCount(g) === 1 ? '' : 's'}`
+                    : `${g.size}×${g.size} · ${g.mode === 'bingo' ? G.WIN_RULES[g.winRule]?.label : g.coop ? 'Team blackout' : `${g.connect} in a row`}`}${result}</small>
+                  <small>${new Date(g.createdAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</small>
                 </span>
                 <span class="stack">${g.players.slice(0, 5).map((pid) => html`<${Emblem} id=${playersById[pid]?.emblem} size=${26} />`)}</span>
               </a>
@@ -341,7 +341,7 @@ function Home({ me, playersById }) {
 
       <a class="panel items-link" href="#/items">
         <span class="icon">📝</span>
-        <span class="grow"><b>Edit hunt items</b><small>${itemPool.length} items on · turn ideas off or add your own</small></span>
+        <span class="grow"><b>Edit hunt items</b><small>${itemPool.length} items on · Turn ideas off or add your own</small></span>
         <span>›</span>
       </a>
 
@@ -531,14 +531,14 @@ function StatsScreen({ me, players, playersById, focus }) {
             <span class="rank">${k + 1}</span>
             <${Emblem} id=${p.emblem} size=${44} />
             <span class="grow"><b>${p.name}${p.id === me.id ? ' (you)' : ''}</b>
-              <small>${s.games} game${s.games === 1 ? '' : 's'} · ${pct(s.wins, s.finished)} win rate</small></span>
+              <small>${s.games} game${s.games === 1 ? '' : 's'}${s.finished ? ` · ${pct(s.wins, s.finished)} win rate` : ''}</small></span>
             <span>›</span>
           </div>
           <div class="stat-grid">
-            <div><b>${s.wins}</b><small>wins</small></div>
-            <div><b>${s.found}</b><small>finds</small></div>
-            <div><b>${s.photos}</b><small>photos</small></div>
-            <div><b>${s.tiers.h}</b><small>★★★ finds</small></div>
+            <div><b>${s.wins}</b><small>Wins</small></div>
+            <div><b>${s.found}</b><small>Finds</small></div>
+            <div><b>${s.photos}</b><small>Photos</small></div>
+            <div><b>${s.tiers.h}</b><small>Hard finds</small></div>
           </div>
         </a>`;
       })}
@@ -560,28 +560,28 @@ function PlayerStats({ p, s, me, playersById }) {
       <div class="player-hero">
         <${Emblem} id=${p.emblem} size=${72} />
         <div><h1 class="title">${p.name}</h1>
-          <p class="muted">${s.games} game${s.games === 1 ? '' : 's'}${p.id === me.id ? ' · that\'s you!' : ''}</p></div>
+          <p class="muted">${s.games} game${s.games === 1 ? '' : 's'}${p.id === me.id ? ' · That\'s you!' : ''}</p></div>
       </div>
 
       <section class="panel">
         <div class="stat-grid big">
-          <div><b>${s.wins}</b><small>wins</small></div>
-          <div><b>${pct(s.wins, s.finished)}</b><small>win rate</small></div>
-          <div><b>${s.found}</b><small>finds</small></div>
-          <div><b>${s.photos}</b><small>photos</small></div>
-          <div><b>${s.lines}</b><small>bingo lines</small></div>
-          <div><b>${s.blackouts}</b><small>blackouts</small></div>
-          <div><b>${s.teamWins}</b><small>co-op wins</small></div>
-          <div><b>${s.rerolls}</b><small>rerolls</small></div>
+          <div><b>${s.wins}</b><small>Wins</small></div>
+          <div><b>${pct(s.wins, s.finished)}</b><small>Win rate</small></div>
+          <div><b>${s.found}</b><small>Finds</small></div>
+          <div><b>${s.photos}</b><small>Photos</small></div>
+          <div><b>${s.lines}</b><small>Bingo lines</small></div>
+          <div><b>${s.blackouts}</b><small>Blackouts</small></div>
+          <div><b>${s.teamWins}</b><small>Co-op wins</small></div>
+          <div><b>${s.rerolls}</b><small>Rerolls</small></div>
         </div>
       </section>
 
       <section class="panel">
         <h2>Finds by difficulty</h2>
         <div class="stat-grid">
-          <div><b>${s.tiers.e}</b><small>★ easy</small></div>
-          <div><b>${s.tiers.m}</b><small>★★ medium</small></div>
-          <div><b>${s.tiers.h}</b><small>★★★ hard</small></div>
+          <div><b>${s.tiers.e}</b><small>★ Easy</small></div>
+          <div><b>${s.tiers.m}</b><small>★★ Medium</small></div>
+          <div><b>${s.tiers.h}</b><small>★★★ Hard</small></div>
         </div>
         ${cats.length > 0 && html`<h2>Favorite kinds of finds</h2>
           <div class="bars">${cats.map(([c, n]) => html`<div class="bar-row" key=${c}>
@@ -771,7 +771,7 @@ function BackupTray({ backups, swapIdx, setSwapIdx, canUse }) {
   if (!backups) return null;
   return html`
     <section class="backups">
-      <h3>Backups <small>${backups.length} left${canUse && backups.length ? ' · tap one, then tap a square to swap' : ''}</small></h3>
+      <h3>Backups <small>${backups.length} left${canUse && backups.length ? ' · Tap one, then tap a square to swap' : ''}</small></h3>
       <div class="backup-row">
         ${backups.length === 0 && html`<span class="muted small">All used up!</span>`}
         ${backups.map((b, i) => html`
@@ -1275,7 +1275,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         return html`<button class="score ${viewing === b.playerId ? 'sel' : ''}" key=${b.playerId} onClick=${() => { setViewing(b.playerId); setSwapIdx(null); }}>
           <${Emblem} id=${p?.emblem} size=${34} />
           <span class="nm">${b.playerId === me.id ? 'You' : firstName(p)}${winnerId === b.playerId ? ' 🏆' : ''}</span>
-          <span class="pts">${s.found} found ·${s.lines} line${s.lines === 1 ? '' : 's'}${game.winRule === 'most' ? ` · ${s.points}pt` : ''}${b.rerolls ? ` · 🎲${b.rerolls}` : ''}</span>
+          <span class="pts">${s.found} found · ${s.lines} line${s.lines === 1 ? '' : 's'}${game.winRule === 'most' ? ` · ${s.points}pt` : ''}${b.rerolls ? ` · 🎲${b.rerolls}` : ''}</span>
         </button>`;
       })}
     </div>
@@ -1488,7 +1488,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 // ───────────────────────── endless ─────────────────────────
 
 const findCount = (g) => (g.history || []).filter(G.isFind).length;
-const ENDLESS_TIERS = [['any', 'Surprise', 'Any difficulty'], ['e', '★', '1 pt'], ['m', '★★', '2 pts'], ['h', '★★★', '3 pts']];
+const ENDLESS_TIERS = [['any', '🎲', 'Surprise'], ['e', '★', '1 pt'], ['m', '★★', '2 pts'], ['h', '★★★', '3 pts']];
 
 function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
   const [open, setOpen] = useState(null); // history index being viewed
@@ -1594,7 +1594,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
   return html`
     ${celebrate && html`<${Confetti} />`}
-    <div class="game-info"><span>Endless · ${findCount(game)} find${findCount(game) === 1 ? '' : 's'} · ${st.slots} active · ${turns ? 'taking turns' : 'anyone snaps'}${mixTag(game)}</span></div>
+    <div class="game-info"><span>Endless · ${findCount(game)} find${findCount(game) === 1 ? '' : 's'} · ${st.slots} active · ${turns ? 'Taking turns' : 'Anyone snaps'}${mixTag(game)}</span></div>
     ${over && html`<${WinBanner}
       text=${game.winner === 'draw' ? "IT'S A TIE!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
       sub="Most points when the game ended." onRematch=${onRematch} />`}
@@ -1644,7 +1644,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
           const found = G.isFind(h);
           const who = h.by ? html`<${Emblem} id=${playersById[h.by]?.emblem} size=${16} /> ${name(h.by)} · ` : '';
           const what = found ? `${TIER_STARS[h.item.tier]} +${pts(h.item)}`
-            : h.rerolled ? '🎲 rerolled' : h.expired ? `⌛ swapped out after ${G.ENDLESS_EXPIRE_AFTER} other finds` : 'skipped';
+            : h.rerolled ? '🎲 Rerolled' : h.expired ? `⌛ Swapped out after ${G.ENDLESS_EXPIRE_AFTER} other finds` : 'Skipped';
           return html`<button class=${'hist-row' + (found ? '' : ' skipped')} key=${h.i} onClick=${() => found && setOpen(h.i)}>
             ${h.photo && thumbs[h.photo] ? html`<img src=${thumbs[h.photo].thumb} alt="" />` : html`<span class=${`hist-icon cat-${h.item.cat}`}>${h.item.icon}</span>`}
             <span class="grow"><b>${h.item.text}</b><small>${who}${what}</small></span>
