@@ -162,7 +162,10 @@ export function playerStats(games, boards) {
       if (g.winner === 'team') s.teamWins++;
       s.recent.push(g);
     }
-    if (g.mode !== 'bingo') {
+    if (g.mode === 'endless') {
+      for (const h of g.history || []) if (!h.skipped) tally(S(h.by), h.item, h.photo);
+      for (const [pid, n] of Object.entries(g.rerolls || {})) S(pid).rerolls += n;
+    } else if (g.mode !== 'bingo') {
       for (const [i, c] of Object.entries(g.claims || {})) tally(S(c.by), g.items?.[i], c.photo);
       for (const [pid, n] of Object.entries(g.rerolls || {})) S(pid).rerolls += n;
     }
@@ -181,4 +184,35 @@ export function playerStats(games, boards) {
     s.topCat = Object.entries(s.cats).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
   }
   return stats;
+}
+
+// ── Endless: one challenge at a time, players take turns.
+export const ENDLESS_POINTS = { e: 1, m: 2, h: 3 };
+
+/** { pid: { points, finds, photos, skips } } for every player in an endless game. */
+export function endlessScores(game) {
+  const out = Object.fromEntries((game.players || []).map((pid) => [pid, { points: 0, finds: 0, photos: 0, skips: 0 }]));
+  for (const h of game.history || []) {
+    const s = (out[h.by] ??= { points: 0, finds: 0, photos: 0, skips: 0 });
+    if (h.skipped) { s.skips++; continue; }
+    s.finds++;
+    s.points += ENDLESS_POINTS[h.item?.tier] || 1;
+    if (h.photo) s.photos++;
+  }
+  return out;
+}
+
+/** Whose turn comes after pid (turn order = join order). */
+export const nextPlayer = (game, pid) => {
+  const ps = game.players || [];
+  return ps[(ps.indexOf(pid) + 1) % ps.length] || ps[0];
+};
+
+/** Random item for an endless turn. tier: 'any' | 'e' | 'm' | 'h'. Avoids repeats until the pool runs dry. */
+export function drawEndless(pool, { tier = 'any', exclude = [] }) {
+  const fits = pool.filter((it) => tier === 'any' || it.tier === tier);
+  const skip = new Set(exclude);
+  const fresh = fits.filter((it) => !skip.has(it.text));
+  const from = fresh.length ? fresh : fits;
+  return from.length ? strip(from[Math.floor(Math.random() * from.length)]) : null;
 }

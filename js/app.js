@@ -70,8 +70,9 @@ const firstName = (p) => (p?.name || 'Someone').split(' ')[0];
 // Current item pool (built-ins minus disabled + custom). Kept in sync with settings/itemBank by <App>.
 let itemPool = ITEMS;
 /** The items a game draws from: everything on, or only characters/shows/movies. */
-// Modes are stored as 'bingo' / 'versus' but shown as Solo Series (own boards) / Crossover (one shared board).
-const modeTag = (g) => (g.mode === 'bingo' ? 'SOLO' : g.coop ? 'CO-OP' : 'X-OVER');
+// Modes are stored as 'bingo' / 'versus' / 'endless' but shown as Solo Series (own boards) /
+// Crossover (one shared board) / Endless (one item at a time, taking turns).
+const modeTag = (g) => (g.mode === 'bingo' ? 'SOLO' : g.mode === 'endless' ? 'ENDLESS' : g.coop ? 'CO-OP' : 'X-OVER');
 
 const MIXES = {
   all: { label: 'Everything', blurb: 'Characters, fandom gear, costume details, con moments & challenges' },
@@ -110,6 +111,18 @@ async function createGame(settings, createdBy) {
     players: settings.players, mix: settings.mix || 'all', createdBy, createdAt: Date.now(), winner: null,
   };
   const fail = (e) => toast(`Sync problem: ${e.message}`, 'error');
+  if (settings.mode === 'endless') {
+    const first = settings.players[0];
+    const tier = settings.tier || 'any';
+    const item = G.drawEndless(poolFor(settings), { tier });
+    if (!item) throw new Error('No items turned on for that mix.');
+    const game = {
+      ...base, size: null, history: [], rerolls: {}, lastPick: { tier, mix: base.mix },
+      current: { item, for: first, tier, mix: base.mix, at: Date.now() }, pick: null,
+    };
+    store.put('games', code, game).catch(fail);
+    return code;
+  }
   if (settings.mode === 'bingo') {
     const game = {
       ...base,
@@ -160,7 +173,7 @@ async function confirmDelete(code) {
 
 const settingsFrom = (g) => ({
   mode: g.mode, size: g.size, difficulty: g.difficulty, players: g.players,
-  winRule: g.winRule, minutes: g.minutes || 60, freeCenter: g.freeCenter, sameCard: g.sameCard, connect: g.connect, coop: !!g.coop, mix: mixOf(g),
+  winRule: g.winRule, minutes: g.minutes || 60, freeCenter: g.freeCenter, sameCard: g.sameCard, connect: g.connect, coop: !!g.coop, mix: mixOf(g), tier: g.lastPick?.tier,
 });
 
 // ───────────────────────── screens ─────────────────────────
@@ -239,6 +252,8 @@ function Home({ me, playersById }) {
   const games = useWatch((cb) => store.watchWhere('games', 'players', 'array-contains', me.id, cb), [me.id]);
   const [code, setCode] = useState('');
   const sorted = (games || []).slice().sort((a, b) => b.createdAt - a.createdAt);
+  const [allGames, setAllGames] = useState(false);
+  const shown = allGames ? sorted : sorted.slice(0, 3);
 
   const join = (e) => {
     e.preventDefault();
@@ -268,6 +283,11 @@ function Home({ me, playersById }) {
           <h2>Crossover</h2>
           <p>Everyone on one shared board. Race to claim squares, or team up to fill it.</p>
         </a>
+        <a class="mode-card endless" href="#/new/endless">
+          <div class="burst">∞!</div>
+          <h2>Endless</h2>
+          <p>One item at a time. Take turns, reroll if you're stuck, and pick what your friend hunts next.</p>
+        </a>
       </section>
 
       <form class="panel join" onSubmit=${join}>
@@ -284,7 +304,7 @@ function Home({ me, playersById }) {
         ${games === undefined && html`<p class="muted">Loading…</p>`}
         ${games && !sorted.length && html`<p class="muted">No games yet. Start one above!</p>`}
         <div class="game-list">
-          ${sorted.map((g) => {
+          ${shown.map((g) => {
             const winner = g.winner && playersById[g.winner];
             const result = winner ? ` · 🏆 ${winner.name}` : g.winner === 'draw' ? ' · Draw' : g.winner === 'team' ? ' · 🎉 Blacked out' : '';
             return html`
@@ -292,8 +312,8 @@ function Home({ me, playersById }) {
               <a class="game-row" href="#/g/${g.code}">
                 <span class="tag ${g.mode}">${modeTag(g)}</span>
                 <span class="grow">
-                  <b>${g.code}</b> · ${g.size}×${g.size}
-                  ${g.mode === 'bingo' ? ` · ${G.WIN_RULES[g.winRule]?.label}` : g.coop ? ' · team blackout' : ` · connect ${g.connect}`}
+                  <b>${g.code}</b> · ${g.mode === 'endless' ? `Endless · ${findCount(g)} find${findCount(g) === 1 ? '' : 's'}`
+                    : `${g.size}×${g.size}${g.mode === 'bingo' ? ` · ${G.WIN_RULES[g.winRule]?.label}` : g.coop ? ' · team blackout' : ` · connect ${g.connect}`}`}
                   <small>${new Date(g.createdAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
                     ${result}</small>
                 </span>
@@ -303,6 +323,8 @@ function Home({ me, playersById }) {
               </div>`;
           })}
         </div>
+        ${sorted.length > 3 && html`<button class="btn small ghost more-games" onClick=${() => setAllGames(!allGames)}>
+          ${allGames ? 'Show fewer' : `Show all ${sorted.length} games`}</button>`}
       </section>
 
       <a class="panel items-link" href="#/stats">
@@ -321,6 +343,7 @@ function Home({ me, playersById }) {
         <summary>How to play</summary>
         <ul>
           <li><b>Solo Series:</b> each player gets their own board. Tap a square → take a photo → it's marked. Choose a win rule when you create the game.</li>
+          <li><b>Endless:</b> one item at a time. Snap it on your turn (★ = 1 pt, ★★ = 2, ★★★ = 3), then pick the difficulty and type for the next player's item. Play as long as you like.</li>
           <li><b>Crossover:</b> everyone shares one board. Snap it first to claim it with your emblem. Get N-in-a-row to win. Or pick <b>Co-op</b>: work together to black out the whole board.</li>
           <li><b>Backups:</b> you get 1–3 backup items (based on board size). Tap a backup, then tap any unmarked square to swap it in.</li>
           <li><b>Easy squares</b> are thematic (tails, wings, horns…). ★★★ squares are the rare finds.</li>
@@ -342,6 +365,8 @@ function Choice({ options, value, onChange }) {
 
 function NewGame({ mode, me, players }) {
   const isBingo = mode === 'bingo';
+  const isEndless = mode === 'endless';
+  const [tier, setTier] = useState('any');
   const [size, setSize] = useState(isBingo ? 5 : 3);
   const [difficulty, setDifficulty] = useState('balanced');
   const [winRule, setWinRule] = useState('line');
@@ -364,7 +389,7 @@ function NewGame({ mode, me, players }) {
   const create = async () => {
     setBusy(true);
     try {
-      const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, mix, players: selected }, me.id);
+      const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, mix, tier, players: selected }, me.id);
       go(`/g/${code}`);
     } catch (e) {
       toast(`Couldn't create game: ${e.message}`, 'error');
@@ -374,13 +399,20 @@ function NewGame({ mode, me, players }) {
 
   const nb = G.backupsFor(size);
   const pool = poolFor({ mix });
-  const tooFew = pool.length < size * size + nb;
+  const tooFew = isEndless ? !pool.length : pool.length < size * size + nb;
   return html`
     <main class="screen">
       <nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>
-      <h1 class="title">${isBingo ? 'New Solo Series' : 'New Crossover'}</h1>
+      <h1 class="title">${isBingo ? 'New Solo Series' : isEndless ? 'New Endless Hunt' : 'New Crossover'}</h1>
 
-      <section class="panel">
+      ${isEndless ? html`<section class="panel">
+        <h2>What kind of items?</h2>
+        <${Choice} value=${mix} onChange=${setMix}
+          options=${Object.entries(MIXES).map(([k, m]) => [k, m.label, m.blurb])} />
+        <h2>First item's difficulty</h2>
+        <${Choice} value=${tier} onChange=${setTier} options=${ENDLESS_TIERS} />
+        <p class="muted small">After each turn you pick these again for the next player.</p>
+      </section>` : html`<section class="panel">
         <h2>Board size</h2>
         <${Choice} value=${size} onChange=${setSize}
           options=${G.SIZES.map((s) => [s, `${s}×${s}`, `${s * s} squares`])} />
@@ -417,7 +449,7 @@ function NewGame({ mode, me, players }) {
             <${Choice} value=${connect} onChange=${setConnect}
               options=${Array.from({ length: size - 2 }, (_, i) => i + 3).map((k) => [k, `${k} in a row`])} />`}
         `}
-      </section>
+      </section>`}
 
       <section class="panel">
         <h2>Players</h2>
@@ -427,11 +459,11 @@ function NewGame({ mode, me, players }) {
               <${Emblem} id=${p.emblem} size=${32} /> ${p.name}${p.id === me.id ? ' (you)' : ''}
             </button>`)}
         </div>
-        <p class="muted small">Not listed? They can join anytime with the game code.</p>
+        <p class="muted small">Not listed? They can join anytime with the game code.${isEndless ? ' Turns go in the order people joined, starting with you.' : ''}</p>
       </section>
 
       <p class="muted small center">Drawing from <b>${pool.length}</b> hunt items${mix === 'all' ? '' : ` (${MIXES[mix].short.toLowerCase()})`} · <a href="#/items">edit list</a></p>
-      ${tooFew && html`<div class="banner warn">Not enough items turned on for a ${size}×${size} board. Turn more on in the item list${mix !== 'all' ? ' or pick Everything' : ''}.</div>`}
+      ${tooFew && html`<div class="banner warn">Not enough items turned on${isEndless ? '' : ` for a ${size}×${size} board`}. Turn more on in the item list${mix !== 'all' ? ' or pick Everything' : ''}.</div>`}
       <button class="btn primary huge" disabled=${busy || tooFew} onClick=${create}>${busy ? 'Creating…' : 'Start the hunt!'}</button>
     </main>`;
 }
@@ -550,7 +582,7 @@ function PlayerStats({ p, s, me, playersById }) {
         <div class="game-list">
           ${s.recent.map((g) => html`<a class="game-row" href="#/g/${g.code}" key=${g.code}>
             <span class="tag ${g.mode}">${modeTag(g)}</span>
-            <span class="grow"><b>${g.code}</b> · ${g.size}×${g.size}
+            <span class="grow"><b>${g.code}</b> · ${g.mode === 'endless' ? 'Endless' : `${g.size}×${g.size}`}
               <small>${new Date(g.createdAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} · ${result(g)}</small></span>
           </a>`)}
         </div>
@@ -1077,7 +1109,7 @@ function GameScreen({ code, me, playersById }) {
     } catch {}
   };
 
-  const Screen = game.mode === 'bingo' ? BingoGame : VersusGame;
+  const Screen = game.mode === 'bingo' ? BingoGame : game.mode === 'endless' ? EndlessGame : VersusGame;
   return html`
     <main class="screen game">
       <nav class="topbar">
@@ -1426,6 +1458,155 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
   `;
 }
 
+// ───────────────────────── endless ─────────────────────────
+
+const findCount = (g) => (g.history || []).filter((h) => !h.skipped).length;
+const ENDLESS_TIERS = [['any', 'Surprise', 'Any difficulty'], ['e', '★', '1 pt'], ['m', '★★', '2 pts'], ['h', '★★★', '3 pts']];
+
+function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
+  const [open, setOpen] = useState(null); // history index being viewed
+  const [tier, setTier] = useState(game.lastPick?.tier || 'any');
+  const [mix, setMix] = useState(game.lastPick?.mix || mixOf(game));
+  const celebrate = useCelebrate(game.winner);
+
+  const scores = G.endlessScores(game);
+  const cur = game.current;
+  const over = !!game.winner;
+  const myTurn = isPlayer && !over && cur?.for === me.id;
+  const name = (pid) => (pid === me.id ? 'You' : firstName(playersById[pid]));
+  const history = (game.history || []).map((h, i) => ({ ...h, i })).reverse();
+
+  // Finish (or skip) the current turn; the next player's item is picked afterwards.
+  const [busy, setBusy] = useState(false);
+  const finish = async (file, skipped = false) => {
+    setBusy(true);
+    let photo = null;
+    try { photo = file ? await uploadPhoto(file, game.code, me.id) : null; } finally { setBusy(false); }
+    const res = await store.transact('games', game.code, (g) => {
+      if (!g || g.winner || !g.current || g.current.for !== me.id) return undefined;
+      const c = g.current;
+      g.history = [...(g.history || []), { item: c.item, by: me.id, photo, at: Date.now(), ...(skipped ? { skipped: true } : {}) }];
+      g.current = null;
+      g.pick = { for: G.nextPlayer(g, me.id), by: me.id };
+      return g;
+    });
+    if (!res.ok) return toast("It's not your turn anymore.", 'error');
+    toast(skipped ? 'Skipped ⏭️' : `+${G.ENDLESS_POINTS[cur.item.tier] || 1} pt${cur.item.tier === 'e' ? '' : 's'}! 🎉`, skipped ? 'info' : 'good');
+  };
+
+  const reroll = async () => {
+    const res = await store.transact('games', game.code, (g) => {
+      if (!g || g.winner || !g.current || g.current.for !== me.id) return undefined;
+      const c = g.current;
+      const exclude = [...(g.history || []).map((h) => h.item.text), c.item.text];
+      const it = G.drawEndless(poolFor({ mix: c.mix }), { tier: c.item.tier, exclude: [...exclude] });
+      if (!it || it.text === c.item.text) return undefined;
+      g.current = { ...c, item: it };
+      g.rerolls = { ...g.rerolls, [me.id]: (g.rerolls?.[me.id] || 0) + 1 };
+      return g;
+    }).catch((e) => { toast(`Rerolling needs a connection: ${e.message}`, 'error'); return null; });
+    if (res && !res.ok) toast('No other items at this level to roll.', 'error');
+  };
+
+  const deal = async () => {
+    const res = await store.transact('games', game.code, (g) => {
+      if (!g || g.winner || !g.pick) return undefined;
+      const item = G.drawEndless(poolFor({ mix }), { tier, exclude: (g.history || []).map((h) => h.item.text) });
+      if (!item) return undefined;
+      g.current = { item, for: g.pick.for, tier, mix, at: Date.now() };
+      g.pick = null;
+      g.lastPick = { tier, mix };
+      return g;
+    }).catch((e) => { toast(`Dealing needs a connection: ${e.message}`, 'error'); return null; });
+    if (res && !res.ok && !res.data?.current) toast('No items match those settings. Try another mix.', 'error');
+  };
+
+  const endGame = async () => {
+    if (!confirm('End the game? Most points wins.')) return;
+    await store.transact('games', game.code, (g) => {
+      if (!g || g.winner) return undefined;
+      const sc = G.endlessScores(g);
+      const best = Math.max(0, ...Object.values(sc).map((x) => x.points));
+      const leaders = Object.keys(sc).filter((k) => sc[k].points === best);
+      g.winner = leaders.length === 1 ? leaders[0] : 'draw';
+      g.wonAt = Date.now();
+      return g;
+    });
+  };
+
+  const winner = game.winner && game.winner !== 'draw' ? playersById[game.winner] : null;
+  const viewing = open !== null ? game.history[open] : null;
+  const turnPid = cur?.for || game.pick?.for;
+
+  return html`
+    ${celebrate && html`<${Confetti} />`}
+    <div class="game-info"><span>Endless · ${findCount(game)} find${findCount(game) === 1 ? '' : 's'}${mixTag(game)}</span></div>
+    ${over && html`<${WinBanner}
+      text=${game.winner === 'draw' ? "IT'S A TIE!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
+      sub="Most points when the game ended." onRematch=${onRematch} />`}
+
+    <div class="scoreboard">
+      ${game.players.map((pid) => {
+        const p = playersById[pid];
+        const sc = scores[pid] || { points: 0, finds: 0 };
+        return html`<div class=${'score' + (pid === turnPid && !over ? ' sel' : '')} key=${pid}>
+          <${Emblem} id=${p?.emblem} size=${34} />
+          <span class="nm">${name(pid)}${game.winner === pid ? ' 🏆' : ''}</span>
+          <span class="pts">${sc.points} pt${sc.points === 1 ? '' : 's'} · ${sc.finds} found${game.rerolls?.[pid] ? ` · 🎲${game.rerolls[pid]}` : ''}</span>
+        </div>`;
+      })}
+    </div>
+
+    ${!over && cur && html`
+      <p class="turn-line">${myTurn ? '🎯 Your turn!' : html`<${Emblem} id=${playersById[cur.for]?.emblem} size=${22} /> ${name(cur.for)}'s turn`}</p>
+      <div class=${`endless-card cat-${cur.item.cat}`}>
+        <span class="stars">${TIER_STARS[cur.item.tier]}</span>
+        <span class="icon">${cur.item.icon}</span>
+        <h2>${cur.item.text}</h2>
+        <small>${CATEGORY_LABELS[cur.item.cat] || ''} · ${G.ENDLESS_POINTS[cur.item.tier] || 1} pt${cur.item.tier === 'e' ? '' : 's'}</small>
+      </div>
+      ${myTurn ? html`
+        <${PhotoButtons} label="Snap it" onFile=${(f) => finish(f).catch((e) => toast(e.message, 'error'))}
+          onNoPhoto=${() => finish(null).catch((e) => toast(e.message, 'error'))} />
+        <div class="row two">
+          <button class="btn small ghost" onClick=${reroll}>🎲 Reroll${game.rerolls?.[me.id] ? ` (${game.rerolls[me.id]} used)` : ''}</button>
+          <button class="btn small ghost" onClick=${() => confirm('Skip this one? No points.') && finish(null, true)}>⏭️ Skip</button>
+        </div>`
+      : html`<p class="muted center">Waiting for ${name(cur.for)} to find it…</p>`}
+    `}
+
+    ${!over && game.pick && html`<section class="panel pick-panel">
+      <h2>${game.pick.for === me.id ? 'Your next item' : `Pick ${name(game.pick.for)}'s next item`}</h2>
+      ${isPlayer ? html`
+        <p class="muted small">${game.pick.by === me.id ? 'You just went, so you choose.' : `${name(game.pick.by)} usually picks, but anyone can.`}</p>
+        <h3>Difficulty</h3>
+        <${Choice} value=${tier} onChange=${setTier} options=${ENDLESS_TIERS} />
+        <h3>Type</h3>
+        <${Choice} value=${mix} onChange=${setMix} options=${Object.entries(MIXES).map(([k, m]) => [k, m.label])} />
+        <button class="btn primary huge" onClick=${deal}>🃏 Deal it!</button>`
+      : html`<p class="muted">Join the game to play.</p>`}
+    </section>`}
+
+    ${history.length > 0 && html`<section class="panel">
+      <h2>Finds so far</h2>
+      <div class="endless-history">
+        ${history.map((h) => html`<button class=${'hist-row' + (h.skipped ? ' skipped' : '')} key=${h.i} onClick=${() => !h.skipped && setOpen(h.i)}>
+          ${h.photo && thumbs[h.photo] ? html`<img src=${thumbs[h.photo].thumb} alt="" />` : html`<span class=${`hist-icon cat-${h.item.cat}`}>${h.item.icon}</span>`}
+          <span class="grow"><b>${h.item.text}</b>
+            <small><${Emblem} id=${playersById[h.by]?.emblem} size=${16} /> ${name(h.by)} · ${h.skipped ? 'skipped' : `${TIER_STARS[h.item.tier]} +${G.ENDLESS_POINTS[h.item.tier] || 1}`}</small></span>
+        </button>`)}
+      </div>
+    </section>`}
+
+    ${isPlayer && !over && html`<button class="btn small ghost end-game" onClick=${endGame}>🏁 End game</button>`}
+    ${busy && html`<div class="busy"><div class="spinner"></div>Uploading…</div>`}
+
+    ${viewing && html`<${SquareModal} item=${viewing.item} photoId=${viewing.photo} found=${true}
+      thumb=${viewing.photo && thumbs[viewing.photo]?.thumb} by=${playersById[viewing.by]} at=${viewing.at}
+      canAct=${false} onClose=${() => setOpen(null)} />`}
+  `;
+}
+
 // ───────────────────────── app shell ─────────────────────────
 
 function App() {
@@ -1445,7 +1626,7 @@ function App() {
   else if (!me || route[0] === 'profile') body = html`<${ProfileScreen} players=${players} me=${me} onPick=${pick} onSwitch=${switchPlayer} />`;
   else if (route[0] === 'stats') body = html`<${StatsScreen} me=${me} players=${players} playersById=${playersById} focus=${route[1]} key=${route[1] || 'all'} />`;
   else if (route[0] === 'items') body = html`<${ItemsScreen} bank=${bank} />`;
-  else if (route[0] === 'new') body = html`<${NewGame} mode=${route[1] === 'versus' ? 'versus' : 'bingo'} me=${me} players=${players} key=${route[1]} />`;
+  else if (route[0] === 'new') body = html`<${NewGame} mode=${['versus', 'endless'].includes(route[1]) ? route[1] : 'bingo'} me=${me} players=${players} key=${route[1]} />`;
   else if (route[0] === 'g' && route[1]) body = html`<${GameScreen} code=${route[1].toUpperCase()} me=${me} playersById=${playersById} key=${route[1]} />`;
   else body = html`<${Home} me=${me} playersById=${playersById} />`;
 

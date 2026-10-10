@@ -159,7 +159,10 @@ export async function renderRecap({ game, boards = [], thumbs, playersById, feat
   ].filter(Boolean)).catch(() => {});
 
   const isBingo = game.mode === 'bingo';
-  const n = game.size;
+  const isEndless = game.mode === 'endless';
+  // Endless has no board: lay the latest finds (up to 49) out as a grid.
+  const finds = isEndless ? (game.history || []).filter((h) => !h.skipped).slice(-49) : [];
+  const n = isEndless ? Math.min(7, Math.max(2, Math.ceil(Math.sqrt(finds.length || 1)))) : game.size;
   const emblemCache = {};
   const getEmblem = async (pid) => (emblemCache[pid] ??= await emblemImg(playersById[pid]?.emblem));
   const boardCells = (b) => b.items.map((item, i) => ({ item, photo: b.marks?.[i]?.photo, found: !!b.marks?.[i], by: b.playerId }));
@@ -186,6 +189,13 @@ export async function renderRecap({ game, boards = [], thumbs, playersById, feat
         pid: b.playerId,
         stats: `${plural(s.found, 'find')} · ${plural(s.lines, 'line')}${game.winRule === 'most' ? ` · ${s.points} pts` : ''}${b.rerolls ? ` · ${plural(b.rerolls, 'reroll')}` : ''}`,
       });
+    }
+  } else if (isEndless) {
+    const sc = G.endlessScores(game);
+    highlight = new Set();
+    cells = finds.map((h) => ({ item: h.item, photo: h.photo, found: true, by: h.by }));
+    for (const pid of game.players.slice().sort((a, b) => sc[b].points - sc[a].points)) {
+      rows.push({ pid, stats: `${plural(sc[pid].points, 'pt')} · ${plural(sc[pid].finds, 'find')}${game.rerolls?.[pid] ? ` · ${plural(game.rerolls[pid], 'reroll')}` : ''}` });
     }
   } else {
     const counts = G.versusCounts(game);
@@ -218,7 +228,7 @@ export async function renderRecap({ game, boards = [], thumbs, playersById, feat
   // title
   comicText(ctx, 'NYCC PHOTO HUNT', W / 2, 140, 118, RED);
   const date = new Date(game.wonAt || game.createdAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-  const modeLine = isBingo
+  const modeLine = isEndless ? `Endless · ${plural(game.history.filter((h) => !h.skipped).length, 'find')}` : isBingo
     ? `Solo Series · ${n}×${n} · ${G.WIN_RULES[game.winRule]?.label || ''}`
     : `Crossover · ${n}×${n} · ${game.coop ? 'Co-op blackout' : `${game.connect} in a row`}`;
   ctx.font = `900 34px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'center';
@@ -256,7 +266,7 @@ export async function renderRecap({ game, boards = [], thumbs, playersById, feat
   ctx.font = `900 34px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'left';
   const caption = isBingo
     ? (featured ? `${firstName(playersById[featured.playerId])}'s ${winnerId === featured.playerId ? 'winning ' : ''}card` : 'The card')
-    : game.coop ? 'The team board' : 'The battlefield';
+    : isEndless ? (finds.length >= 49 ? 'The last 49 finds' : 'Every find') : game.coop ? 'The team board' : 'The battlefield';
   ctx.fillText(caption.toUpperCase(), PAD, y + 40);
   y += H_CAPTION;
   await drawBoard(ctx, { x: PAD, y, w: boardW, n, cells, highlight, versus: !isBingo, thumbs, getEmblem, playersById });
