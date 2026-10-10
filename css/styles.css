@@ -578,3 +578,5 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .how-list li { margin-bottom: var(--s2); line-height: 1.4; }
 
 .collage-filter { margin: var(--s3) 0 0; }
+
+.players-list .item-row:first-child { border-top: 0; }

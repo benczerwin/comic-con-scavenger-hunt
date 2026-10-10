@@ -189,6 +189,7 @@ function ProfileScreen({ players, me, onPick, onSwitch }) {
   const [emblem, setEmblem] = useState(me?.emblem || EMBLEMS[Math.floor(Math.random() * EMBLEMS.length)].id);
   const others = (players || []).filter((p) => p.id !== me?.id);
   const taken = new Set(others.map((p) => p.emblem));
+  const [sheet, setSheet] = useState(false);
 
   const save = () => {
     const n = name.trim();
@@ -211,7 +212,10 @@ function ProfileScreen({ players, me, onPick, onSwitch }) {
 
   return html`
     <main class="screen">
-      ${me && html`<nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>`}
+      ${(me || players?.length > 0) && html`<nav class="topbar">
+        ${me ? html`<a class="back" href="#/">‹ Home</a>` : html`<span></span>`}
+        ${players?.length > 0 && html`<button class="round-btn small" onClick=${() => setSheet(true)} aria-label="All players" title="All players">${PEOPLE_ICON}</button>`}
+      </nav>`}
       <h1 class="title">${me ? 'Edit your hero' : 'Who goes there?'}</h1>
       ${!me && others.length > 0 && html`
         <section class="panel">
@@ -241,18 +245,29 @@ function ProfileScreen({ players, me, onPick, onSwitch }) {
           <button class="btn primary" onClick=${save}>${me ? 'Save' : "Let's hunt!"}</button>
         </div>
       </section>
-      ${(players || []).length > 0 && html`
-        <section class="panel">
-          <h2>All players</h2>
-          ${players.map((p) => html`
+      ${sheet && html`<${PlayersSheet} players=${players} me=${me} onRemove=${removePlayer}
+        onSwitch=${() => { setSheet(false); onSwitch(); }} onClose=${() => setSheet(false)} />`}
+    </main>`;
+}
+
+function PlayersSheet({ players, me, onRemove, onSwitch, onClose }) {
+  useScrollLock();
+  return html`
+    <div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && onClose()}>
+      <div class="modal">
+        <button class="x" onClick=${onClose} aria-label="Close">×</button>
+        <h2 class="recap-title">All players</h2>
+        <div class="players-list">
+          ${(players || []).map((p) => html`
             <div class="item-row" key=${p.id}>
               <${Emblem} id=${p.emblem} size=${34} />
               <span class="grow">${p.name}${p.id === me?.id ? ' (you)' : ''}</span>
-              <button class="icon-btn round" aria-label="Remove ${p.name}" onClick=${() => removePlayer(p)}>${TRASH_SVG}</button>
+              <button class="icon-btn round" aria-label="Remove ${p.name}" onClick=${() => onRemove(p)}>${TRASH_SVG}</button>
             </div>`)}
-          ${me && html`<div class="row end"><button class="btn small ghost" onClick=${onSwitch}>Switch player on this phone</button></div>`}
-        </section>`}
-    </main>`;
+        </div>
+        ${me && html`<button class="btn ghost" onClick=${onSwitch}>Switch player on this phone</button>`}
+      </div>
+    </div>`;
 }
 
 function Home({ me, playersById }) {
@@ -506,6 +521,8 @@ const svgIcon = (d, size = 22) => html`<svg viewBox="0 0 24 24" width=${size} he
 const STATS_ICON = html`<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="currentColor">
   <rect x="3" y="11" width="5" height="10" rx="1.5" /><rect x="9.5" y="4" width="5" height="17" rx="1.5" /><rect x="16" y="8" width="5" height="13" rx="1.5" /></svg>`;
 const GEAR_ICON = svgIcon('M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z');
+const PEOPLE_ICON = svgIcon('M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8', 20);
+
 // A little stack of photos.
 const COLLAGE_ICON = html`<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor"
   stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
