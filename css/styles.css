@@ -289,14 +289,16 @@ a { color: inherit; }
 .modal-bg {
   position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); z-index: 50;
   display: flex; align-items: flex-end; justify-content: center; padding: 0;
-  animation: fade 0.15s ease-out;
+  animation: fade 0.15s ease-out; overscroll-behavior: contain; touch-action: none;
 }
+.modal-bg .modal { touch-action: pan-y; }
 .modal {
   position: relative; width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto;
   background: var(--paper); border: 3px solid var(--ink); border-bottom: 0; border-radius: 20px 20px 0 0;
   padding: 18px 16px calc(20px + env(safe-area-inset-bottom));
   display: flex; flex-direction: column; gap: var(--s4);
   animation: up 0.2s ease-out;
+  overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
 }
 @media (min-width: 700px) {
   .modal-bg { align-items: center; padding: 20px; }

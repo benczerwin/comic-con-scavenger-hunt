@@ -1051,10 +1051,29 @@ function PhotoButtons({ onFile, onNoPhoto, label = 'Take photo' }) {
     </div>`;
 }
 
+// Freezes the page behind a sheet. iOS Safari ignores overflow:hidden on body, so pin it in place
+// and restore the scroll position afterwards. Counted, so stacked sheets work.
+let scrollLocks = 0, lockedY = 0;
+function useScrollLock() {
+  useEffect(() => {
+    if (scrollLocks++ === 0) {
+      lockedY = window.scrollY;
+      Object.assign(document.body.style, { position: 'fixed', top: `-${lockedY}px`, left: '0', right: '0', overflow: 'hidden' });
+    }
+    return () => {
+      if (--scrollLocks === 0) {
+        Object.assign(document.body.style, { position: '', top: '', left: '', right: '', overflow: '' });
+        window.scrollTo(0, lockedY);
+      }
+    };
+  }, []);
+}
+
 function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel, onFile, onNoPhoto, onRemove, removeLabel, onEdit, onReroll, rerolls = 0, onClose, note }) {
   const [full, setFull] = useState(null);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
+  useScrollLock();
 
   useEffect(() => {
     setFull(null);
@@ -1134,6 +1153,7 @@ function WinBanner({ text, sub, onRematch }) {
 }
 
 function RecapModal({ recap, code, playersById, onFeature, onClose, title = 'Game recap' }) {
+  useScrollLock();
   const ext = recap.blob?.type === 'image/jpeg' ? 'jpg' : 'png';
   const file = recap.blob && new File([recap.blob], `nycc-hunt-${code}.${ext}`, { type: recap.blob.type || 'image/png' });
   const canShare = file && navigator.canShare?.({ files: [file] });
