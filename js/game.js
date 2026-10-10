@@ -216,3 +216,19 @@ export function drawEndless(pool, { tier = 'any', exclude = [] }) {
   const from = fresh.length ? fresh : fits;
   return from.length ? strip(from[Math.floor(Math.random() * from.length)]) : null;
 }
+
+/** Endless games keep 1–3 active slots: { id, item, tier, mix, at } or { id, pick: { by } } (waiting
+ *  for someone to choose the next item). Upgrades games made before slots existed (current/pick). */
+export function endlessState(g) {
+  if (g.active) return { active: g.active, slots: g.slots || g.active.length || 1, turnMode: g.turnMode || 'any', turn: g.turn || null };
+  const active = g.current ? [{ id: 's0', item: g.current.item, tier: g.current.tier, mix: g.current.mix, at: g.current.at }]
+    : g.pick ? [{ id: 's0', pick: { by: g.pick.by } }] : [];
+  return { active, slots: 1, turnMode: 'turns', turn: g.current?.for || g.pick?.for || g.players?.[0] || null };
+}
+
+/** Writes slot state back in the current shape and drops the old single-item fields. */
+export function withEndlessState(g, st) {
+  const out = { ...g, active: st.active, slots: st.slots, turnMode: st.turnMode, turn: st.turn };
+  delete out.current; delete out.pick;
+  return out;
+}

@@ -112,13 +112,18 @@ async function createGame(settings, createdBy) {
   };
   const fail = (e) => toast(`Sync problem: ${e.message}`, 'error');
   if (settings.mode === 'endless') {
-    const first = settings.players[0];
     const tier = settings.tier || 'any';
-    const item = G.drawEndless(poolFor(settings), { tier });
-    if (!item) throw new Error('No items turned on for that mix.');
+    const slots = settings.slots || 1;
+    const active = [];
+    for (let k = 0; k < slots; k++) {
+      const item = G.drawEndless(poolFor(settings), { tier, exclude: active.map((a) => a.item.text) });
+      if (!item) throw new Error('No items turned on for that mix.');
+      active.push({ id: G.uid(), item, tier, mix: base.mix, at: Date.now() });
+    }
+    const turnMode = settings.turnMode || 'any';
     const game = {
       ...base, size: null, history: [], rerolls: {}, lastPick: { tier, mix: base.mix },
-      current: { item, for: first, tier, mix: base.mix, at: Date.now() }, pick: null,
+      active, slots, turnMode, turn: turnMode === 'turns' ? settings.players[0] : null,
     };
     store.put('games', code, game).catch(fail);
     return code;
@@ -174,6 +179,7 @@ async function confirmDelete(code) {
 const settingsFrom = (g) => ({
   mode: g.mode, size: g.size, difficulty: g.difficulty, players: g.players,
   winRule: g.winRule, minutes: g.minutes || 60, freeCenter: g.freeCenter, sameCard: g.sameCard, connect: g.connect, coop: !!g.coop, mix: mixOf(g), tier: g.lastPick?.tier,
+  slots: g.mode === 'endless' ? G.endlessState(g).slots : undefined, turnMode: g.mode === 'endless' ? G.endlessState(g).turnMode : undefined,
 });
 
 // ───────────────────────── screens ─────────────────────────
@@ -343,7 +349,7 @@ function Home({ me, playersById }) {
         <summary>How to play</summary>
         <ul>
           <li><b>Solo Series:</b> each player gets their own board. Tap a square → take a photo → it's marked. Choose a win rule when you create the game.</li>
-          <li><b>Endless:</b> one item at a time. Snap it on your turn (★ = 1 pt, ★★ = 2, ★★★ = 3), then pick the difficulty and type for the next player's item. Play as long as you like.</li>
+          <li><b>Endless:</b> 1–3 items active at a time. Snap one to score (★ = 1 pt, ★★ = 2, ★★★ = 3), then pick the difficulty and type of the item that replaces it. Choose whether anyone can snap (first one gets it) or players take turns. Play as long as you like.</li>
           <li><b>Crossover:</b> everyone shares one board. Snap it first to claim it with your emblem. Get N-in-a-row to win. Or pick <b>Co-op</b>: work together to black out the whole board.</li>
           <li><b>Backups:</b> you get 1–3 backup items (based on board size). Tap a backup, then tap any unmarked square to swap it in.</li>
           <li><b>Easy squares</b> are thematic (tails, wings, horns…). ★★★ squares are the rare finds.</li>
@@ -367,6 +373,8 @@ function NewGame({ mode, me, players }) {
   const isBingo = mode === 'bingo';
   const isEndless = mode === 'endless';
   const [tier, setTier] = useState('any');
+  const [slots, setSlots] = useState(1);
+  const [turnMode, setTurnMode] = useState('any');
   const [size, setSize] = useState(isBingo ? 5 : 3);
   const [difficulty, setDifficulty] = useState('balanced');
   const [winRule, setWinRule] = useState('line');
@@ -389,7 +397,7 @@ function NewGame({ mode, me, players }) {
   const create = async () => {
     setBusy(true);
     try {
-      const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, mix, tier, players: selected }, me.id);
+      const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, mix, tier, slots, turnMode, players: selected }, me.id);
       go(`/g/${code}`);
     } catch (e) {
       toast(`Couldn't create game: ${e.message}`, 'error');
@@ -409,9 +417,14 @@ function NewGame({ mode, me, players }) {
         <h2>What kind of items?</h2>
         <${Choice} value=${mix} onChange=${setMix}
           options=${Object.entries(MIXES).map(([k, m]) => [k, m.label, m.blurb])} />
-        <h2>First item's difficulty</h2>
+        <h2>Items active at once</h2>
+        <${Choice} value=${slots} onChange=${setSlots} options=${[[1, '1', 'One at a time'], [2, '2', 'Two to hunt'], [3, '3', 'Three to hunt']]} />
+        <h2>Who can snap?</h2>
+        <${Choice} value=${turnMode} onChange=${setTurnMode}
+          options=${[['any', 'Anyone', 'First to snap an item gets the points'], ['turns', 'Take turns', 'Players go one at a time']]} />
+        <h2>Starting difficulty</h2>
         <${Choice} value=${tier} onChange=${setTier} options=${ENDLESS_TIERS} />
-        <p class="muted small">After each turn you pick these again for the next player.</p>
+        <p class="muted small">Whoever snaps an item picks the difficulty and type of the one that replaces it.</p>
       </section>` : html`<section class="panel">
         <h2>Board size</h2>
         <${Choice} value=${size} onChange=${setSize}
@@ -459,7 +472,7 @@ function NewGame({ mode, me, players }) {
               <${Emblem} id=${p.emblem} size=${32} /> ${p.name}${p.id === me.id ? ' (you)' : ''}
             </button>`)}
         </div>
-        <p class="muted small">Not listed? They can join anytime with the game code.${isEndless ? ' Turns go in the order people joined, starting with you.' : ''}</p>
+        <p class="muted small">Not listed? They can join anytime with the game code.${isEndless && turnMode === 'turns' ? ' Turns go in the order people joined, starting with you.' : ''}</p>
       </section>
 
       <p class="muted small center">Drawing from <b>${pool.length}</b> hunt items${mix === 'all' ? '' : ` (${MIXES[mix].short.toLowerCase()})`} · <a href="#/items">edit list</a></p>
@@ -1479,60 +1492,72 @@ const ENDLESS_TIERS = [['any', 'Surprise', 'Any difficulty'], ['e', '★', '1 pt
 
 function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
   const [open, setOpen] = useState(null); // history index being viewed
-  const [tier, setTier] = useState(game.lastPick?.tier || 'any');
-  const [mix, setMix] = useState(game.lastPick?.mix || mixOf(game));
+  const [snapId, setSnapId] = useState(null); // slot open in the snap sheet (multi-slot layout)
+  const [busy, setBusy] = useState(false);
   const celebrate = useCelebrate(game.winner);
 
+  const st = G.endlessState(game);
   const scores = G.endlessScores(game);
-  const cur = game.current;
   const over = !!game.winner;
-  const myTurn = isPlayer && !over && cur?.for === me.id;
+  const turns = st.turnMode === 'turns';
+  const canSnap = isPlayer && !over && (!turns || st.turn === me.id);
   const name = (pid) => (pid === me.id ? 'You' : firstName(playersById[pid]));
   const history = (game.history || []).map((h, i) => ({ ...h, i })).reverse();
+  const pts = (it) => G.ENDLESS_POINTS[it.tier] || 1;
 
-  // Finish (or skip) the current turn; the next player's item is picked afterwards.
-  const [busy, setBusy] = useState(false);
-  const finish = async (file, skipped = false) => {
+  // Runs fn(state, g) inside a transaction on the normalized slot state; fn returns false to abort.
+  const update = (fn) => store.transact('games', game.code, (g) => {
+    if (!g || g.winner) return undefined;
+    const s2 = G.endlessState(g);
+    s2.active = s2.active.map((a) => ({ ...a }));
+    if (fn(s2, g) === false) return undefined;
+    return G.withEndlessState(g, s2);
+  });
+  const slotOf = (s2, id) => s2.active.find((a) => a.id === id);
+
+  const capture = async (slot, file, skipped = false) => {
     setBusy(true);
     let photo = null;
     try { photo = file ? await uploadPhoto(file, game.code, me.id) : null; } finally { setBusy(false); }
-    const res = await store.transact('games', game.code, (g) => {
-      if (!g || g.winner || !g.current || g.current.for !== me.id) return undefined;
-      const c = g.current;
-      g.history = [...(g.history || []), { item: c.item, by: me.id, photo, at: Date.now(), ...(skipped ? { skipped: true } : {}) }];
-      g.current = null;
-      g.pick = { for: G.nextPlayer(g, me.id), by: me.id };
-      return g;
+    const res = await update((s2, g) => {
+      const a = slotOf(s2, slot.id);
+      if (!a?.item || a.item.text !== slot.item.text) return false;
+      if (s2.turnMode === 'turns' && s2.turn !== me.id) return false;
+      g.history = [...(g.history || []), { item: a.item, by: me.id, photo, at: Date.now(), ...(skipped ? { skipped: true } : {}) }];
+      Object.keys(a).forEach((k) => k !== 'id' && delete a[k]);
+      a.pick = { by: me.id };
+      if (s2.turnMode === 'turns') s2.turn = G.nextPlayer(g, me.id);
     });
-    if (!res.ok) return toast("It's not your turn anymore.", 'error');
-    toast(skipped ? 'Skipped ⏭️' : `+${G.ENDLESS_POINTS[cur.item.tier] || 1} pt${cur.item.tier === 'e' ? '' : 's'}! 🎉`, skipped ? 'info' : 'good');
+    setSnapId(null);
+    if (!res.ok) return toast(turns ? "It's not your turn." : 'Someone got that one first!', 'error');
+    toast(skipped ? 'Skipped ⏭️' : `+${pts(slot.item)} pt${pts(slot.item) === 1 ? '' : 's'}! 🎉`, skipped ? 'info' : 'good');
   };
 
-  const reroll = async () => {
-    const res = await store.transact('games', game.code, (g) => {
-      if (!g || g.winner || !g.current || g.current.for !== me.id) return undefined;
-      const c = g.current;
-      const exclude = [...(g.history || []).map((h) => h.item.text), c.item.text];
-      const it = G.drawEndless(poolFor({ mix: c.mix }), { tier: c.item.tier, exclude: [...exclude] });
-      if (!it || it.text === c.item.text) return undefined;
-      g.current = { ...c, item: it };
+  const reroll = async (slot) => {
+    const res = await update((s2, g) => {
+      const a = slotOf(s2, slot.id);
+      if (!a?.item || (s2.turnMode === 'turns' && s2.turn !== me.id)) return false;
+      const exclude = [...(g.history || []).map((h) => h.item.text), ...s2.active.filter((x) => x.item).map((x) => x.item.text)];
+      const it = G.drawEndless(poolFor({ mix: a.mix }), { tier: a.item.tier, exclude });
+      if (!it || it.text === a.item.text) return false;
+      a.item = it;
       g.rerolls = { ...g.rerolls, [me.id]: (g.rerolls?.[me.id] || 0) + 1 };
-      return g;
     }).catch((e) => { toast(`Rerolling needs a connection: ${e.message}`, 'error'); return null; });
     if (res && !res.ok) toast('No other items at this level to roll.', 'error');
   };
 
-  const deal = async () => {
-    const res = await store.transact('games', game.code, (g) => {
-      if (!g || g.winner || !g.pick) return undefined;
-      const item = G.drawEndless(poolFor({ mix }), { tier, exclude: (g.history || []).map((h) => h.item.text) });
-      if (!item) return undefined;
-      g.current = { item, for: g.pick.for, tier, mix, at: Date.now() };
-      g.pick = null;
+  const deal = async (slot, tier, mix) => {
+    const res = await update((s2, g) => {
+      const a = slotOf(s2, slot.id);
+      if (!a?.pick) return false;
+      const exclude = [...(g.history || []).map((h) => h.item.text), ...s2.active.filter((x) => x.item).map((x) => x.item.text)];
+      const item = G.drawEndless(poolFor({ mix }), { tier, exclude });
+      if (!item) return false;
+      delete a.pick;
+      Object.assign(a, { item, tier, mix, at: Date.now() });
       g.lastPick = { tier, mix };
-      return g;
     }).catch((e) => { toast(`Dealing needs a connection: ${e.message}`, 'error'); return null; });
-    if (res && !res.ok && !res.data?.current) toast('No items match those settings. Try another mix.', 'error');
+    if (res && !res.ok && slotOf(G.endlessState(res.data || game), slot.id)?.pick) toast('No items match those settings. Try another type.', 'error');
   };
 
   const endGame = async () => {
@@ -1550,11 +1575,12 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
   const winner = game.winner && game.winner !== 'draw' ? playersById[game.winner] : null;
   const viewing = open !== null ? game.history[open] : null;
-  const turnPid = cur?.for || game.pick?.for;
+  const single = st.active.length === 1;
+  const snapSlot = snapId && st.active.find((a) => a.id === snapId && a.item);
 
   return html`
     ${celebrate && html`<${Confetti} />`}
-    <div class="game-info"><span>Endless · ${findCount(game)} find${findCount(game) === 1 ? '' : 's'}${mixTag(game)}</span></div>
+    <div class="game-info"><span>Endless · ${findCount(game)} find${findCount(game) === 1 ? '' : 's'} · ${st.slots} active · ${turns ? 'taking turns' : 'anyone snaps'}${mixTag(game)}</span></div>
     ${over && html`<${WinBanner}
       text=${game.winner === 'draw' ? "IT'S A TIE!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
       sub="Most points when the game ended." onRematch=${onRematch} />`}
@@ -1563,7 +1589,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       ${game.players.map((pid) => {
         const p = playersById[pid];
         const sc = scores[pid] || { points: 0, finds: 0 };
-        return html`<div class=${'score' + (pid === turnPid && !over ? ' sel' : '')} key=${pid}>
+        return html`<div class=${'score' + (turns && pid === st.turn && !over ? ' sel' : '')} key=${pid}>
           <${Emblem} id=${p?.emblem} size=${34} />
           <span class="nm">${name(pid)}${game.winner === pid ? ' 🏆' : ''}</span>
           <span class="pts">${sc.points} pt${sc.points === 1 ? '' : 's'} · ${sc.finds} found${game.rerolls?.[pid] ? ` · 🎲${game.rerolls[pid]}` : ''}</span>
@@ -1571,36 +1597,35 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       })}
     </div>
 
-    ${!over && cur && html`
-      <p class="turn-line">${myTurn ? '🎯 Your turn!' : html`<${Emblem} id=${playersById[cur.for]?.emblem} size=${22} /> ${name(cur.for)}'s turn`}</p>
-      <div class=${`endless-card cat-${cur.item.cat}`}>
-        <span class="stars">${TIER_STARS[cur.item.tier]}</span>
-        <span class="icon">${cur.item.icon}</span>
-        <h2>${cur.item.text}</h2>
-        <small>${CATEGORY_LABELS[cur.item.cat] || ''} · ${G.ENDLESS_POINTS[cur.item.tier] || 1} pt${cur.item.tier === 'e' ? '' : 's'}</small>
+    ${!over && html`
+      <p class="turn-line">${!turns ? (isPlayer ? '⚡ Anyone can snap. First one gets it!' : 'Anyone in the game can snap.')
+        : st.turn === me.id ? '🎯 Your turn!' : html`<${Emblem} id=${playersById[st.turn]?.emblem} size=${22} /> ${name(st.turn)}'s turn`}</p>
+      <div class=${'endless-slots' + (single ? ' single' : '')}>
+        ${st.active.map((slot) => slot.pick
+          ? html`<${PickSlot} key=${slot.id} slot=${slot} game=${game} me=${me} isPlayer=${isPlayer} name=${name} onDeal=${deal} />`
+          : html`<div class="endless-slot" key=${slot.id}>
+            <button class=${`endless-card cat-${slot.item.cat}${single ? '' : ' compact'}`} disabled=${single || !canSnap} onClick=${() => setSnapId(slot.id)}>
+              <span class="stars">${TIER_STARS[slot.item.tier]}</span>
+              <span class="icon">${slot.item.icon}</span>
+              <h2>${slot.item.text}</h2>
+              <small>${CATEGORY_LABELS[slot.item.cat] || ''} · ${pts(slot.item)} pt${pts(slot.item) === 1 ? '' : 's'}</small>
+            </button>
+            ${canSnap && (single ? html`<div class="endless-actions">
+              <${PhotoButtons} label="Snap it" onFile=${(f) => capture(slot, f).catch((e) => toast(e.message, 'error'))}
+                onNoPhoto=${() => capture(slot, null).catch((e) => toast(e.message, 'error'))} />
+              <div class="row two">
+                <button class="btn small ghost" onClick=${() => reroll(slot)}>🎲 Reroll${game.rerolls?.[me.id] ? ` (${game.rerolls[me.id]} used)` : ''}</button>
+                <button class="btn small ghost" onClick=${() => confirm('Skip this one? No points.') && capture(slot, null, true)}>⏭️ Skip</button>
+              </div>
+            </div>` : html`<div class="row slot-actions">
+              <button class="btn primary" onClick=${() => setSnapId(slot.id)}>📸 Snap</button>
+              <button class="btn ghost" onClick=${() => reroll(slot)} aria-label="Reroll">🎲</button>
+              <button class="btn ghost" onClick=${() => confirm('Skip this one? No points.') && capture(slot, null, true)} aria-label="Skip">⏭️</button>
+            </div>`)}
+          </div>`)}
       </div>
-      ${myTurn ? html`<div class="endless-actions">
-        <${PhotoButtons} label="Snap it" onFile=${(f) => finish(f).catch((e) => toast(e.message, 'error'))}
-          onNoPhoto=${() => finish(null).catch((e) => toast(e.message, 'error'))} />
-        <div class="row two">
-          <button class="btn small ghost" onClick=${reroll}>🎲 Reroll${game.rerolls?.[me.id] ? ` (${game.rerolls[me.id]} used)` : ''}</button>
-          <button class="btn small ghost" onClick=${() => confirm('Skip this one? No points.') && finish(null, true)}>⏭️ Skip</button>
-        </div>
-      </div>`
-      : html`<p class="muted center">Waiting for ${name(cur.for)} to find it…</p>`}
+      ${turns && isPlayer && st.turn !== me.id && html`<p class="muted center">Waiting for ${name(st.turn)} to snap one…</p>`}
     `}
-
-    ${!over && game.pick && html`<section class="panel pick-panel">
-      <h2>${game.pick.for === me.id ? 'Your next item' : `Pick ${name(game.pick.for)}'s next item`}</h2>
-      ${isPlayer ? html`
-        <p class="muted small">${game.pick.by === me.id ? 'You just went, so you choose.' : `${name(game.pick.by)} usually picks, but anyone can.`}</p>
-        <h3>Difficulty</h3>
-        <${Choice} value=${tier} onChange=${setTier} options=${ENDLESS_TIERS} />
-        <h3>Type</h3>
-        <${Choice} value=${mix} onChange=${setMix} options=${Object.entries(MIXES).map(([k, m]) => [k, m.label])} />
-        <button class="btn primary huge" onClick=${deal}>🃏 Deal it!</button>`
-      : html`<p class="muted">Join the game to play.</p>`}
-    </section>`}
 
     ${history.length > 0 && html`<section class="panel">
       <h2>Finds so far</h2>
@@ -1608,7 +1633,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         ${history.map((h) => html`<button class=${'hist-row' + (h.skipped ? ' skipped' : '')} key=${h.i} onClick=${() => !h.skipped && setOpen(h.i)}>
           ${h.photo && thumbs[h.photo] ? html`<img src=${thumbs[h.photo].thumb} alt="" />` : html`<span class=${`hist-icon cat-${h.item.cat}`}>${h.item.icon}</span>`}
           <span class="grow"><b>${h.item.text}</b>
-            <small><${Emblem} id=${playersById[h.by]?.emblem} size=${16} /> ${name(h.by)} · ${h.skipped ? 'skipped' : `${TIER_STARS[h.item.tier]} +${G.ENDLESS_POINTS[h.item.tier] || 1}`}</small></span>
+            <small><${Emblem} id=${playersById[h.by]?.emblem} size=${16} /> ${name(h.by)} · ${h.skipped ? 'skipped' : `${TIER_STARS[h.item.tier]} +${pts(h.item)}`}</small></span>
         </button>`)}
       </div>
     </section>`}
@@ -1616,10 +1641,33 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     ${isPlayer && !over && html`<button class="btn small ghost end-game" onClick=${endGame}>🏁 End game</button>`}
     ${busy && html`<div class="busy"><div class="spinner"></div>Uploading…</div>`}
 
+    ${snapSlot && html`<${SquareModal} item=${snapSlot.item} found=${false} canAct=${canSnap} actionLabel="Snap it"
+      onFile=${(f) => capture(snapSlot, f)} onNoPhoto=${() => capture(snapSlot, null)}
+      onReroll=${canSnap ? () => reroll(snapSlot) : null} rerolls=${game.rerolls?.[me.id] || 0}
+      onRemove=${canSnap ? () => confirm('Skip this one? No points.') && capture(snapSlot, null, true) : null} removeLabel="⏭️ Skip (no points)"
+      onClose=${() => setSnapId(null)} />`}
     ${viewing && html`<${SquareModal} item=${viewing.item} photoId=${viewing.photo} found=${true}
       thumb=${viewing.photo && thumbs[viewing.photo]?.thumb} by=${playersById[viewing.by]} at=${viewing.at}
       canAct=${false} onClose=${() => setOpen(null)} />`}
   `;
+}
+
+/** An empty endless slot: choose difficulty + type, then deal the replacement item. */
+function PickSlot({ slot, game, me, isPlayer, name, onDeal }) {
+  const [tier, setTier] = useState(game.lastPick?.tier || 'any');
+  const [mix, setMix] = useState(game.lastPick?.mix || mixOf(game));
+  const mine = slot.pick.by === me.id;
+  return html`<section class="panel pick-panel">
+    <h2>${mine ? 'You found it! Pick the next item' : `${name(slot.pick.by)} is picking the next item`}</h2>
+    ${isPlayer ? html`
+      ${!mine && html`<p class="muted small">Anyone can pick if they're busy.</p>`}
+      <h3>Difficulty</h3>
+      <${Choice} value=${tier} onChange=${setTier} options=${ENDLESS_TIERS} />
+      <h3>Type</h3>
+      <${Choice} value=${mix} onChange=${setMix} options=${Object.entries(MIXES).map(([k, m]) => [k, m.label])} />
+      <button class="btn primary huge" onClick=${() => onDeal(slot, tier, mix)}>🃏 Deal it!</button>`
+    : html`<p class="muted">Join the game to play.</p>`}
+  </section>`;
 }
 
 // ───────────────────────── app shell ─────────────────────────
