@@ -106,7 +106,8 @@ const poolFor = (g) => {
   const m = legacyMix(g);
   const tiers = g.tiers?.length ? new Set(g.tiers) : null;
   // it.group lets older games that picked the previous categories keep working
-  return itemPool.filter((it) => (cats ? cats.has(it.cat) || cats.has(it.group) : m === 'all' || itemKind(it) === m) && (!tiers || tiers.has(it.tier)));
+  return itemPool.filter((it) => (cats ? cats.has(it.cat) || cats.has(it.group) : m === 'all' || itemKind(it) === m)
+    && (!tiers || tiers.has(it.tier)) && (!g.mineOnly || it.mine || it.custom));
 };
 const someCats = (cats) => (cats?.length && cats.length < ALL_CATS.length ? cats : undefined); // store only a real subset
 const ALL_TIERS = ['e', 'm', 'h'];
@@ -115,7 +116,7 @@ const backupCount = (g) => g.backupCount ?? G.backupsFor(g.size);
 const diffTag = (g) => (g.tiers?.length === 1 ? '' : ` · ${G.DIFFICULTY[g.difficulty]?.label}`);
 const tiersTag = (g) => (g.tiers?.length && g.tiers.length < 3 ? ` · ${g.tiers.map((t) => TIER_STARS[t]).join(' ')} only` : '');
 const catsLabel = (cats) => (cats.length <= 2 ? cats.map((c) => catLabel(c)).join(' + ') : `${cats.length} categories`);
-const mixTag = (g) => (someCats(g.cats) ? ` · ${catsLabel(g.cats)}`
+const mixTag = (g) => (g.mineOnly ? ' · My list' : '') + (someCats(g.cats) ? ` · ${catsLabel(g.cats)}`
   : !g.cats && legacyMix(g) !== 'all' ? ` · ${legacyMix(g) === 'char' ? 'Characters' : 'Fandom gear'}` : '');
 const BANK_ID = 'itemBank';
 /** Turns an item off in the shared item list so no new board, backup or reroll uses it. */
@@ -164,7 +165,7 @@ async function createGame(settings, createdBy) {
   const code = await uniqueCode();
   const base = {
     code, mode: settings.mode, size: settings.size, difficulty: settings.difficulty,
-    players: settings.players, ...(someCats(settings.cats) ? { cats: settings.cats } : {}),
+    players: settings.players, ...(someCats(settings.cats) ? { cats: settings.cats } : {}), ...(settings.mineOnly ? { mineOnly: true } : {}),
     ...(!settings.cats && settings.mix && settings.mix !== 'all' ? { mix: settings.mix } : {}), // rematch of an older game
     ...(settings.tiers?.length && settings.tiers.length < 3 ? { tiers: settings.tiers } : {}),
     ...(settings.backupCount !== undefined && settings.mode !== 'endless' ? { backupCount: settings.backupCount } : {}),
@@ -243,7 +244,7 @@ async function confirmDelete(code) {
 }
 
 const settingsFrom = (g) => ({
-  handSize: g.handSize,
+  handSize: g.handSize, mineOnly: !!g.mineOnly,
   mode: g.mode, size: g.size, difficulty: g.difficulty, players: g.players,
   winRule: g.winRule, minutes: g.minutes || 60, freeCenter: g.freeCenter, sameCard: g.sameCard, connect: g.connect, coop: !!g.coop, cats: g.cats, mix: g.cats ? undefined : g.mix, tier: g.lastPick?.tier, tiers: g.tiers,
   backupCount: g.mode === 'endless' ? undefined : backupCount(g), noSwaps: !!g.noSwaps, place: !!g.place,
@@ -484,6 +485,12 @@ function RerollToggle({ swaps, setSwaps }) {
     <span>Allow rerolls <small>(swap an item for a random one with the same stars)</small></span></label>`;
 }
 
+function MineToggle({ on, set }) {
+  const n = itemPool.filter((it) => it.mine || it.custom).length;
+  return html`<label class="toggle"><input type="checkbox" checked=${on} onChange=${(e) => set(e.target.checked)} />
+    <span>Only my list <small>(${n} items: your wish list + items you added)</small></span></label>`;
+}
+
 /** Pick any number of categories. Callers block starting/dealing while none are picked. */
 function CatPicker({ value, onChange }) {
   const toggle = (c) => onChange(value.includes(c) ? value.filter((x) => x !== c) : ALL_CATS.filter((x) => x === c || value.includes(x)));
@@ -517,6 +524,7 @@ function NewGame({ mode, me, players }) {
   const [connect, setConnect] = useState(G.defaultConnect(3));
   const [coop, setCoop] = useState(false);
   const [cats, setCats] = useState(ALL_CATS);
+  const [mineOnly, setMineOnly] = useState(false);
   const [tiers, setTiers] = useState(ALL_TIERS);
   const [backups, setBackups] = useState(null); // null = follow the board size
   const [swaps, setSwaps] = useState(true);
@@ -536,7 +544,7 @@ function NewGame({ mode, me, players }) {
   const create = async () => {
     setBusy(true);
     try {
-      const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, cats, tier, slots, turnMode, tiers: isEndless ? null : tiers,
+      const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, cats, mineOnly, tier, slots, turnMode, tiers: isEndless ? null : tiers,
         backupCount: nb, noSwaps: !swaps, place: !isBingo && !isEndless && place, handSize: hand, players: selected }, me.id);
       go(`/g/${code}`);
     } catch (e) {
@@ -546,7 +554,7 @@ function NewGame({ mode, me, players }) {
   };
 
   const nb = backups ?? G.backupsFor(size);
-  const pool = cats.length ? poolFor({ cats, tiers: isEndless ? null : tiers }) : [];
+  const pool = cats.length ? poolFor({ cats, mineOnly, tiers: isEndless ? null : tiers }) : [];
   const tooFew = isEndless ? !pool.length : pool.length < size * size + nb;
   return html`
     <main class="screen">
@@ -556,6 +564,7 @@ function NewGame({ mode, me, players }) {
       ${isEndless ? html`<section class="panel">
         <h2>What kind of items?</h2>
         <${CatPicker} value=${cats} onChange=${setCats} />
+        <${MineToggle} on=${mineOnly} set=${setMineOnly} />
         <h2>Items active at once</h2>
         <${Choice} value=${slots} onChange=${setSlots} options=${[[1, '1', 'One at a time'], [2, '2', 'Two to hunt'], [3, '3', 'Three to hunt']]} />
         <h2>Who can snap?</h2>
@@ -572,6 +581,7 @@ function NewGame({ mode, me, players }) {
 
         <h2>What's on the board?</h2>
         <${CatPicker} value=${cats} onChange=${setCats} />
+        <${MineToggle} on=${mineOnly} set=${setMineOnly} />
 
         <h2>Stars</h2>
         <div class="choice">
@@ -933,7 +943,7 @@ function ItemsScreen({ bank }) {
   const all = [...custom.map((c) => ({ ...normalizeItem(c), custom: true })), ...ITEMS];
 
   const save = (next) => store.put('settings', BANK_ID, {
-    disabled: bank?.disabled || [], custom, ...next, updatedAt: Date.now(),
+    disabled: bank?.disabled || [], custom, presets: bank?.presets || [], ...next, updatedAt: Date.now(),
   }).catch((e) => toast(`Sync problem: ${e.message}`, 'error'));
 
   const toggle = (text) => {
@@ -952,16 +962,36 @@ function ItemsScreen({ bank }) {
   };
   const setAll = (on) => {
     const visibleTexts = filtered.map((i) => i.text);
+    const changes = visibleTexts.filter((t) => disabled.has(t) === on).length;
+    if (changes > 10 && !confirm(`Turn ${on ? 'on' : 'off'} ${changes} items? Save your current set first if you want to come back to it.`)) return;
     const d = new Set(disabled);
     for (const t of visibleTexts) on ? d.delete(t) : d.add(t);
     save({ disabled: [...d] });
+  };
+
+  // Saved sets: snapshots of which items are on, so "All on" etc. never loses your picks.
+  const savePreset = () => {
+    const name = (prompt('Name this set of picks (e.g. "My NYCC list")') || '').trim().slice(0, 30);
+    if (!name) return;
+    const rest = (bank?.presets || []).filter((pr) => pr.name !== name);
+    save({ presets: [...rest, { name, disabled: [...disabled], at: Date.now() }] });
+    toast(`Saved "${name}"`, 'good');
+  };
+  const loadPreset = (pr) => {
+    if (!confirm(`Load "${pr.name}"? It replaces which items are on and off right now.`)) return;
+    save({ disabled: pr.disabled });
+    toast(`Loaded "${pr.name}"`);
+  };
+  const deletePreset = (pr) => {
+    if (!confirm(`Delete the saved set "${pr.name}"?`)) return;
+    save({ presets: (bank?.presets || []).filter((x) => x.name !== pr.name) });
   };
 
   const needle = q.trim().toLowerCase();
   const filtered = all.filter((it) =>
     (tier === 'all' || it.tier === tier) &&
     (catF === 'all' || it.cat === catF) &&
-    (show === 'all' || (show === 'on' && !disabled.has(it.text)) || (show === 'off' && disabled.has(it.text)) || (show === 'custom' && it.custom)) &&
+    (show === 'all' || (show === 'on' && !disabled.has(it.text)) || (show === 'off' && disabled.has(it.text)) || (show === 'custom' && (it.custom || it.mine))) &&
     (!needle || it.text.toLowerCase().includes(needle)));
   const byCat = Object.keys(CATEGORY_LABELS).map((cat) => [cat, filtered.filter((i) => i.cat === cat)]).filter(([, xs]) => xs.length);
   const onCount = all.filter((i) => !disabled.has(i.text)).length;
@@ -990,6 +1020,14 @@ function ItemsScreen({ bank }) {
           ${[['all', 'Any'], ['on', 'On'], ['off', 'Off'], ['custom', 'Mine']].map(([k, l]) => html`
             <button class="pill ${show === k ? 'sel' : ''}" onClick=${() => setShow(k)}>${l}</button>`)}
         </div>
+        <div class="presets">
+          <span class="muted small">Saved sets:</span>
+          ${(bank?.presets || []).map((pr) => html`<span class="preset" key=${pr.name}>
+            <button class="pill" onClick=${() => loadPreset(pr)}>${pr.name} <small>(${all.length - pr.disabled.length} on)</small></button>
+            <button class="preset-x" aria-label=${`Delete ${pr.name}`} onClick=${() => deletePreset(pr)}>×</button>
+          </span>`)}
+          <button class="pill" onClick=${savePreset}>💾 Save current</button>
+        </div>
         <div class="row small">
           <span class="grow muted">${filtered.length} shown</span>
           <button class="btn small ghost" onClick=${() => setAll(true)}>All on</button>
@@ -1004,7 +1042,7 @@ function ItemsScreen({ bank }) {
             const on = !disabled.has(it.text);
             return html`<div class="item-row ${on ? '' : 'off'}" key=${it.text}>
               <span class="icon">${it.icon}</span>
-              <span class="grow">${it.text}${it.custom && html` <i class="badge">mine</i>`}<small class="stars">${TIER_STARS[it.tier]}</small></span>
+              <span class="grow">${it.text}${(it.custom || it.mine) && html` <i class="badge">mine</i>`}<small class="stars">${TIER_STARS[it.tier]}</small></span>
               ${it.custom && html`<button class="icon-btn round" aria-label="Delete item" onClick=${() => removeCustom(it.text)}>${TRASH_SVG}</button>`}
               <label class="switch"><input type="checkbox" checked=${on} onChange=${() => toggle(it.text)} /><span></span></label>
             </div>`;
@@ -2075,7 +2113,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         o.seen = (o.seen || 0) + 1;
         if (o.seen < G.ENDLESS_EXPIRE_AFTER) continue;
         const exclude = [...g.history.map((h) => h.item.text), ...s2.active.filter((x) => x.item).map((x) => x.item.text)];
-        const it = G.drawEndless(poolFor({ cats: o.cats, mix: o.mix }), { tier: o.tier || 'any', exclude });
+        const it = G.drawEndless(poolFor({ cats: o.cats, mix: o.mix, mineOnly: g.mineOnly }), { tier: o.tier || 'any', exclude });
         if (!it) continue;
         g.history.push({ item: o.item, expired: true, at: now });
         Object.assign(o, { item: it, seen: 0, at: now });
@@ -2095,7 +2133,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       if (!a?.item || a.item.text !== slot.item.text || (s2.turnMode === 'turns' && s2.turn !== me.id)) return false;
       const used = usedTexts(g, s2);
       const it = choice && !used.includes(choice.text) ? choice
-        : G.drawEndless(poolFor({ cats: a.cats, mix: a.mix }).filter((x) => x.text !== a.item.text), { tier: a.item.tier, exclude: used });
+        : G.drawEndless(poolFor({ cats: a.cats, mix: a.mix, mineOnly: g.mineOnly }).filter((x) => x.text !== a.item.text), { tier: a.item.tier, exclude: used });
       if (!it) return false;
       g.history = [...(g.history || []), { item: a.item, by: me.id, [why]: true, at: Date.now() }];
       a.item = it;
@@ -2112,7 +2150,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       const a = slotOf(s2, slot.id);
       if (!a?.pick) return false;
       const exclude = [...(g.history || []).map((h) => h.item.text), ...s2.active.filter((x) => x.item).map((x) => x.item.text)];
-      const item = G.drawEndless(poolFor({ cats }), { tier, exclude });
+      const item = G.drawEndless(poolFor({ cats, mineOnly: g.mineOnly }), { tier, exclude });
       if (!item) return false;
       delete a.pick;
       Object.assign(a, { item, tier, cats, seen: 0, at: Date.now() });

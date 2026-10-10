@@ -704,8 +704,24 @@ export const normalizeItem = (it) => (CATEGORY_LABELS[it.cat] || it.cat === 'fre
 const GROUP_KIND = { cosplay: 'char', anime: 'char', games: 'char', hot: 'char', merch: 'obj' };
 export const itemKind = (it) => GROUP_KIND[it.group || it.cat] ?? null;
 
+/** Ben's own wish list: tagged "mine" so it can be filtered and played on its own. */
+export const MY_LIST = new Set([
+ 'Any Spider-Man','Barbie or Ken','Batman (any version)','The Joker','Art the Clown (Terrifier)','Freddy, Jason or Michael Myers','Jigsaw or Billy the puppet (Saw)',
+ 'Any The Boys character','Homelander (The Boys)','Any Guardians of the Galaxy member','Marty McFly or Doc Brown','The Hulk (or She-Hulk)','Moon Knight','An Overwatch hero','Mercy or D.Va (Overwatch)',
+ 'Princess Leia','Mr. Freeze or Elsa','Two-Face','The Riddler','Any Batman villain','Mario or Luigi','Robin or Nightwing','Ahsoka Tano','The Winter Soldier',
+ 'Anything Game of Thrones or House of the Dragon','A Targaryen (silver wig!)','Venom or Carnage','Black Canary','Captain Marvel','Thanos or an Infinity Gauntlet','Ant-Man or the Wasp',
+ 'A Watchmen character (Rorschach, Dr. Manhattan…)','All Might (My Hero Academia)','Nezuko with her bamboo','Aquaman','Sung Jinwoo (Solo Leveling)','Moana or Maui','Judge Dredd','Spawn',
+ 'Attack on Titan Survey Corps','Superman','Deathstroke','Star-Lord','Black Widow','Poison Ivy','The Punisher','Eleven or Vecna (Stranger Things)','Anything Stranger Things','Rick or Morty','Daredevil',
+ 'Captain America','A Ghostbuster with a proton pack','Anything Ghostbusters','Kratos','Any Pokémon (plush, hat or cosplay)','Anything Pokémon','Starfire or Raven (Teen Titans)','Velma',
+ 'Scooby-Doo, Shaggy, Fred or Daphne','Kim Possible','A Stormtrooper','Catwoman','Master Chief','A Resident Evil character','A Mandalorian','Doctor Strange','Captain Carter','A Jedi with a lightsaber',
+ 'Saitama (One-Punch Man)','Thor','Blade','A Predator','Goku or any Dragon Ball','A Harry Potter character','Harry Potter himself (scar + glasses)','Anything Harry Potter',
+ 'A Spider-Man villain (not Venom or Carnage)','Cyclops','Harley Quinn','Iron Man','Any Mortal Kombat fighter','Scorpion or Sub-Zero (Mortal Kombat)','Wonder Woman','Loki (horns!)','Scarlet Witch',
+ 'Any Disney or Pixar character','Anything Disney or Pixar','Shrek','Joel or Ellie (The Last of Us)','A Clicker (The Last of Us)','Supergirl','Any Fantastic Four member','Jinx or Vi (Arcane)','Anything Arcane',
+ 'Chainsaw Man / Denji','Anything Chainsaw Man','Pyramid Head (Silent Hill)','Courage the Cowardly Dog','Mr. Terrific','Indiana Jones','Deadpool (any variant)','Wolverine'
+]);
+
 export const ITEMS = [RAW, MORE, MERCH, THEMES].flatMap((g) => Object.entries(g)).flatMap(([group, rows]) =>
-  rows.map(([tier, icon, text]) => ({ tier, icon, text, cat: CAT_OVERRIDES[text] || GROUP_CAT[group], group }))
+  rows.map(([tier, icon, text]) => ({ tier, icon, text, cat: CAT_OVERRIDES[text] || GROUP_CAT[group], group, ...(MY_LIST.has(text) ? { mine: true } : {}) }))
 );
 
 export const FREE_ITEM = { tier: 'free', icon: '⭐', text: 'FREE SPACE', cat: 'free' };

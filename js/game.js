@@ -78,7 +78,7 @@ export function generateCard({ size, difficulty = 'balanced', freeCenter = false
 /** Items games draw from: built-ins minus disabled ones, plus custom items. bank = settings/itemBank doc. */
 export function buildPool(bank) {
   const off = new Set(bank?.disabled || []);
-  return [...ITEMS, ...(bank?.custom || []).map(normalizeItem)].filter((it) => !off.has(it.text));
+  return [...ITEMS, ...(bank?.custom || []).map((c) => ({ ...normalizeItem(c), custom: true }))].filter((it) => !off.has(it.text));
 }
 
 /** Every straight run of length k (rows, cols, both diagonals) in an n×n grid. */
