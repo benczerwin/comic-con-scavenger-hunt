@@ -161,7 +161,7 @@ export async function renderRecap({ game, boards = [], thumbs, playersById, feat
   const isBingo = game.mode === 'bingo';
   const isEndless = game.mode === 'endless';
   // Endless has no board: lay the latest finds (up to 49) out as a grid.
-  const finds = isEndless ? (game.history || []).filter((h) => !h.skipped).slice(-49) : [];
+  const finds = isEndless ? (game.history || []).filter(G.isFind).slice(-49) : [];
   const n = isEndless ? Math.min(7, Math.max(2, Math.ceil(Math.sqrt(finds.length || 1)))) : game.size;
   const emblemCache = {};
   const getEmblem = async (pid) => (emblemCache[pid] ??= await emblemImg(playersById[pid]?.emblem));
@@ -228,7 +228,7 @@ export async function renderRecap({ game, boards = [], thumbs, playersById, feat
   // title
   comicText(ctx, 'NYCC PHOTO HUNT', W / 2, 140, 118, RED);
   const date = new Date(game.wonAt || game.createdAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-  const modeLine = isEndless ? `Endless · ${plural(game.history.filter((h) => !h.skipped).length, 'find')}` : isBingo
+  const modeLine = isEndless ? `Endless · ${plural(game.history.filter(G.isFind).length, 'find')}` : isBingo
     ? `Solo Series · ${n}×${n} · ${G.WIN_RULES[game.winRule]?.label || ''}`
     : `Crossover · ${n}×${n} · ${game.coop ? 'Co-op blackout' : `${game.connect} in a row`}`;
   ctx.font = `900 34px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'center';

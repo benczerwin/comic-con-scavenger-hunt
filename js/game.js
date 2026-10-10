@@ -163,7 +163,7 @@ export function playerStats(games, boards) {
       s.recent.push(g);
     }
     if (g.mode === 'endless') {
-      for (const h of g.history || []) if (!h.skipped) tally(S(h.by), h.item, h.photo);
+      for (const h of g.history || []) if (isFind(h)) tally(S(h.by), h.item, h.photo);
       for (const [pid, n] of Object.entries(g.rerolls || {})) S(pid).rerolls += n;
     } else if (g.mode !== 'bingo') {
       for (const [i, c] of Object.entries(g.claims || {})) tally(S(c.by), g.items?.[i], c.photo);
@@ -188,13 +188,17 @@ export function playerStats(games, boards) {
 
 // ── Endless: one challenge at a time, players take turns.
 export const ENDLESS_POINTS = { e: 1, m: 2, h: 3 };
+/** Endless history also logs items that left the board without being found (rerolled, swapped out, skipped). */
+export const isFind = (h) => !h.skipped && !h.rerolled && !h.expired;
+/** An active item is swapped out automatically once this many other items get found while it's up. */
+export const ENDLESS_EXPIRE_AFTER = 2;
 
 /** { pid: { points, finds, photos, skips } } for every player in an endless game. */
 export function endlessScores(game) {
   const out = Object.fromEntries((game.players || []).map((pid) => [pid, { points: 0, finds: 0, photos: 0, skips: 0 }]));
   for (const h of game.history || []) {
+    if (!isFind(h)) { if (h.skipped && out[h.by]) out[h.by].skips++; continue; }
     const s = (out[h.by] ??= { points: 0, finds: 0, photos: 0, skips: 0 });
-    if (h.skipped) { s.skips++; continue; }
     s.finds++;
     s.points += ENDLESS_POINTS[h.item?.tier] || 1;
     if (h.photo) s.photos++;

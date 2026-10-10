@@ -349,7 +349,7 @@ function Home({ me, playersById }) {
         <summary>How to play</summary>
         <ul>
           <li><b>Solo Series:</b> each player gets their own board. Tap a square → take a photo → it's marked. Choose a win rule when you create the game.</li>
-          <li><b>Endless:</b> 1–3 items active at a time. Snap one to score (★ = 1 pt, ★★ = 2, ★★★ = 3), then pick the difficulty and type of the item that replaces it. Choose whether anyone can snap (first one gets it) or players take turns. Play as long as you like.</li>
+          <li><b>Endless:</b> 1–3 items active at a time. Snap one to score (★ = 1 pt, ★★ = 2, ★★★ = 3), then pick the difficulty and type of the item that replaces it. An item that sits while 2 others get found swaps itself out. Choose whether anyone can snap (first one gets it) or players take turns. Play as long as you like.</li>
           <li><b>Crossover:</b> everyone shares one board. Snap it first to claim it with your emblem. Get N-in-a-row to win. Or pick <b>Co-op</b>: work together to black out the whole board.</li>
           <li><b>Backups:</b> you get 1–3 backup items (based on board size). Tap a backup, then tap any unmarked square to swap it in.</li>
           <li><b>Easy squares</b> are thematic (tails, wings, horns…). ★★★ squares are the rare finds.</li>
@@ -1487,7 +1487,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
 // ───────────────────────── endless ─────────────────────────
 
-const findCount = (g) => (g.history || []).filter((h) => !h.skipped).length;
+const findCount = (g) => (g.history || []).filter(G.isFind).length;
 const ENDLESS_TIERS = [['any', 'Surprise', 'Any difficulty'], ['e', '★', '1 pt'], ['m', '★★', '2 pts'], ['h', '★★★', '3 pts']];
 
 function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
@@ -1515,7 +1515,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
   });
   const slotOf = (s2, id) => s2.active.find((a) => a.id === id);
 
-  const capture = async (slot, file, skipped = false) => {
+  const capture = async (slot, file) => {
     setBusy(true);
     let photo = null;
     try { photo = file ? await uploadPhoto(file, game.code, me.id) : null; } finally { setBusy(false); }
@@ -1523,14 +1523,26 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       const a = slotOf(s2, slot.id);
       if (!a?.item || a.item.text !== slot.item.text) return false;
       if (s2.turnMode === 'turns' && s2.turn !== me.id) return false;
-      g.history = [...(g.history || []), { item: a.item, by: me.id, photo, at: Date.now(), ...(skipped ? { skipped: true } : {}) }];
+      const now = Date.now();
+      g.history = [...(g.history || []), { item: a.item, by: me.id, photo, at: now }];
       Object.keys(a).forEach((k) => k !== 'id' && delete a[k]);
       a.pick = { by: me.id };
+      // Every other item that's still up has now watched one more find; stale ones get swapped out.
+      for (const o of s2.active) {
+        if (!o.item) continue;
+        o.seen = (o.seen || 0) + 1;
+        if (o.seen < G.ENDLESS_EXPIRE_AFTER) continue;
+        const exclude = [...g.history.map((h) => h.item.text), ...s2.active.filter((x) => x.item).map((x) => x.item.text)];
+        const it = G.drawEndless(poolFor({ mix: o.mix }), { tier: o.tier || 'any', exclude });
+        if (!it) continue;
+        g.history.push({ item: o.item, expired: true, at: now });
+        Object.assign(o, { item: it, seen: 0, at: now });
+      }
       if (s2.turnMode === 'turns') s2.turn = G.nextPlayer(g, me.id);
     });
     setSnapId(null);
     if (!res.ok) return toast(turns ? "It's not your turn." : 'Someone got that one first!', 'error');
-    toast(skipped ? 'Skipped ⏭️' : `+${pts(slot.item)} pt${pts(slot.item) === 1 ? '' : 's'}! 🎉`, skipped ? 'info' : 'good');
+    toast(`+${pts(slot.item)} pt${pts(slot.item) === 1 ? '' : 's'}! 🎉`, 'good');
   };
 
   const reroll = async (slot) => {
@@ -1540,7 +1552,9 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       const exclude = [...(g.history || []).map((h) => h.item.text), ...s2.active.filter((x) => x.item).map((x) => x.item.text)];
       const it = G.drawEndless(poolFor({ mix: a.mix }), { tier: a.item.tier, exclude });
       if (!it || it.text === a.item.text) return false;
+      g.history = [...(g.history || []), { item: a.item, by: me.id, rerolled: true, at: Date.now() }];
       a.item = it;
+      a.seen = 0;
       g.rerolls = { ...g.rerolls, [me.id]: (g.rerolls?.[me.id] || 0) + 1 };
     }).catch((e) => { toast(`Rerolling needs a connection: ${e.message}`, 'error'); return null; });
     if (res && !res.ok) toast('No other items at this level to roll.', 'error');
@@ -1554,7 +1568,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       const item = G.drawEndless(poolFor({ mix }), { tier, exclude });
       if (!item) return false;
       delete a.pick;
-      Object.assign(a, { item, tier, mix, at: Date.now() });
+      Object.assign(a, { item, tier, mix, seen: 0, at: Date.now() });
       g.lastPick = { tier, mix };
     }).catch((e) => { toast(`Dealing needs a connection: ${e.message}`, 'error'); return null; });
     if (res && !res.ok && slotOf(G.endlessState(res.data || game), slot.id)?.pick) toast('No items match those settings. Try another type.', 'error');
@@ -1613,14 +1627,10 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
             ${canSnap && (single ? html`<div class="endless-actions">
               <${PhotoButtons} label="Snap it" onFile=${(f) => capture(slot, f).catch((e) => toast(e.message, 'error'))}
                 onNoPhoto=${() => capture(slot, null).catch((e) => toast(e.message, 'error'))} />
-              <div class="row two">
-                <button class="btn small ghost" onClick=${() => reroll(slot)}>🎲 Reroll${game.rerolls?.[me.id] ? ` (${game.rerolls[me.id]} used)` : ''}</button>
-                <button class="btn small ghost" onClick=${() => confirm('Skip this one? No points.') && capture(slot, null, true)}>⏭️ Skip</button>
-              </div>
+              <button class="btn small ghost" onClick=${() => reroll(slot)}>🎲 Reroll${game.rerolls?.[me.id] ? ` (${game.rerolls[me.id]} used)` : ''}</button>
             </div>` : html`<div class="row slot-actions">
               <button class="btn primary" onClick=${() => setSnapId(slot.id)}>📸 Snap</button>
-              <button class="btn ghost" onClick=${() => reroll(slot)} aria-label="Reroll">🎲</button>
-              <button class="btn ghost" onClick=${() => confirm('Skip this one? No points.') && capture(slot, null, true)} aria-label="Skip">⏭️</button>
+              <button class="btn ghost" onClick=${() => reroll(slot)}>🎲 Reroll</button>
             </div>`)}
           </div>`)}
       </div>
@@ -1628,13 +1638,18 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     `}
 
     ${history.length > 0 && html`<section class="panel">
-      <h2>Finds so far</h2>
+      <h2>Everything so far</h2>
       <div class="endless-history">
-        ${history.map((h) => html`<button class=${'hist-row' + (h.skipped ? ' skipped' : '')} key=${h.i} onClick=${() => !h.skipped && setOpen(h.i)}>
-          ${h.photo && thumbs[h.photo] ? html`<img src=${thumbs[h.photo].thumb} alt="" />` : html`<span class=${`hist-icon cat-${h.item.cat}`}>${h.item.icon}</span>`}
-          <span class="grow"><b>${h.item.text}</b>
-            <small><${Emblem} id=${playersById[h.by]?.emblem} size=${16} /> ${name(h.by)} · ${h.skipped ? 'skipped' : `${TIER_STARS[h.item.tier]} +${pts(h.item)}`}</small></span>
-        </button>`)}
+        ${history.map((h) => {
+          const found = G.isFind(h);
+          const who = h.by ? html`<${Emblem} id=${playersById[h.by]?.emblem} size=${16} /> ${name(h.by)} · ` : '';
+          const what = found ? `${TIER_STARS[h.item.tier]} +${pts(h.item)}`
+            : h.rerolled ? '🎲 rerolled' : h.expired ? `⌛ swapped out after ${G.ENDLESS_EXPIRE_AFTER} other finds` : 'skipped';
+          return html`<button class=${'hist-row' + (found ? '' : ' skipped')} key=${h.i} onClick=${() => found && setOpen(h.i)}>
+            ${h.photo && thumbs[h.photo] ? html`<img src=${thumbs[h.photo].thumb} alt="" />` : html`<span class=${`hist-icon cat-${h.item.cat}`}>${h.item.icon}</span>`}
+            <span class="grow"><b>${h.item.text}</b><small>${who}${what}</small></span>
+          </button>`;
+        })}
       </div>
     </section>`}
 
@@ -1644,7 +1659,6 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     ${snapSlot && html`<${SquareModal} item=${snapSlot.item} found=${false} canAct=${canSnap} actionLabel="Snap it"
       onFile=${(f) => capture(snapSlot, f)} onNoPhoto=${() => capture(snapSlot, null)}
       onReroll=${canSnap ? () => reroll(snapSlot) : null} rerolls=${game.rerolls?.[me.id] || 0}
-      onRemove=${canSnap ? () => confirm('Skip this one? No points.') && capture(snapSlot, null, true) : null} removeLabel="⏭️ Skip (no points)"
       onClose=${() => setSnapId(null)} />`}
     ${viewing && html`<${SquareModal} item=${viewing.item} photoId=${viewing.photo} found=${true}
       thumb=${viewing.photo && thumbs[viewing.photo]?.thumb} by=${playersById[viewing.by]} at=${viewing.at}
