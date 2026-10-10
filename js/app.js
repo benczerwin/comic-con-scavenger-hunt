@@ -113,8 +113,16 @@ const someCats = (cats) => (cats?.length && cats.length < ALL_CATS.length ? cats
 const ALL_TIERS = ['e', 'm', 'h'];
 const backupCount = (g) => g.backupCount ?? G.backupsFor(g.size);
 // Difficulty only means something when more than one star level is in play.
-const diffTag = (g) => (g.tiers?.length === 1 ? '' : ` · ${G.DIFFICULTY[g.difficulty]?.label}`);
-const tiersTag = (g) => (g.tiers?.length && g.tiers.length < 3 ? ` · ${g.tiers.map((t) => TIER_STARS[t]).join(' ')} only` : '');
+// Star display is a per-device preference.
+let hideStars = (() => { try { return localStorage.getItem('nycc-hide-stars') === '1'; } catch { return false; } })();
+const setHideStars = (on) => {
+  hideStars = on;
+  try { localStorage.setItem('nycc-hide-stars', on ? '1' : ''); } catch {}
+  dispatchEvent(new Event('nycc:prefs'));
+};
+
+const diffTag = (g) => (hideStars || g.tiers?.length === 1 ? '' : ` · ${G.DIFFICULTY[g.difficulty]?.label}`);
+const tiersTag = (g) => (!hideStars && g.tiers?.length && g.tiers.length < 3 ? ` · ${g.tiers.map((t) => TIER_STARS[t]).join(' ')} only` : '');
 const catsLabel = (cats) => (cats.length <= 2 ? cats.map((c) => catLabel(c)).join(' + ') : `${cats.length} categories`);
 const mixTag = (g) => (g.mineOnly ? ' · My list' : '') + (someCats(g.cats) ? ` · ${catsLabel(g.cats)}`
   : !g.cats && legacyMix(g) !== 'all' ? ` · ${legacyMix(g) === 'char' ? 'Characters' : 'Fandom gear'}` : '');
@@ -169,7 +177,7 @@ async function createGame(settings, createdBy) {
     ...(!settings.cats && settings.mix && settings.mix !== 'all' ? { mix: settings.mix } : {}), // rematch of an older game
     ...(settings.tiers?.length && settings.tiers.length < 3 ? { tiers: settings.tiers } : {}),
     ...(settings.backupCount !== undefined && settings.mode !== 'endless' ? { backupCount: settings.backupCount } : {}),
-    ...(settings.noSwaps ? { noSwaps: true } : {}), createdBy, createdAt: Date.now(), winner: null,
+    ...(settings.noSwaps ? { noSwaps: true } : {}), ...(settings.rerollLimit ? { rerollLimit: settings.rerollLimit } : {}), createdBy, createdAt: Date.now(), winner: null,
   };
   const fail = (e) => toast(`Sync problem: ${e.message}`, 'error');
   if (settings.mode === 'endless') {
@@ -247,7 +255,7 @@ const settingsFrom = (g) => ({
   handSize: g.handSize, mineOnly: !!g.mineOnly,
   mode: g.mode, size: g.size, difficulty: g.difficulty, players: g.players,
   winRule: g.winRule, minutes: g.minutes || 60, freeCenter: g.freeCenter, sameCard: g.sameCard, connect: g.connect, coop: !!g.coop, cats: g.cats, mix: g.cats ? undefined : g.mix, tier: g.lastPick?.tier, tiers: g.tiers,
-  backupCount: g.mode === 'endless' ? undefined : backupCount(g), noSwaps: !!g.noSwaps, place: !!g.place,
+  backupCount: g.mode === 'endless' ? undefined : backupCount(g), noSwaps: !!g.noSwaps, rerollLimit: g.rerollLimit, place: !!g.place,
   slots: g.mode === 'endless' ? G.endlessState(g).slots : undefined, turnMode: g.mode === 'endless' ? G.endlessState(g).turnMode : undefined,
 });
 
@@ -473,17 +481,25 @@ function SettingsScreen({ me }) {
         <span>›</span>
       </a>
       <section class="panel">
+        <label class="toggle"><input type="checkbox" checked=${!hideStars} onChange=${(e) => setHideStars(!e.target.checked)} />
+          <span>Show stars <small>(difficulty levels on items, plus star and difficulty options for new games)</small></span></label>
+      </section>
+      <section class="panel">
         <h2>How to play</h2>
         <${HowToPlay} />
       </section>
     </main>`;
 }
 
-// Stored as noSwaps for older games; it now switches rerolls off.
-function RerollToggle({ swaps, setSwaps }) {
-  return html`<label class="toggle"><input type="checkbox" checked=${swaps} onChange=${(e) => setSwaps(e.target.checked)} />
-    <span>Allow rerolls <small>(swap an item for a random one with the same stars)</small></span></label>`;
+// Rerolls per player. 0 is stored as noSwaps (older games), a cap as rerollLimit, no cap as neither.
+const REROLL_LIMITS = [[0, 'Off'], [3, '3'], [5, '5'], [10, '10'], [Infinity, '∞', 'No limit']];
+function RerollChoice({ limit, setLimit }) {
+  return html`<h2>Rerolls each</h2>
+    <${Choice} value=${limit} onChange=${setLimit} options=${REROLL_LIMITS} />
+    <p class="muted small">A reroll swaps an item for a random one${hideStars ? '' : ' with the same stars'}.</p>`;
 }
+const rerollCap = (g) => (g.noSwaps ? 0 : g.rerollLimit || Infinity);
+const canReroll = (g, used = 0) => used < rerollCap(g);
 
 function MineToggle({ on, set }) {
   const n = itemPool.filter((it) => it.mine || it.custom).length;
@@ -527,7 +543,7 @@ function NewGame({ mode, me, players }) {
   const [mineOnly, setMineOnly] = useState(false);
   const [tiers, setTiers] = useState(ALL_TIERS);
   const [backups, setBackups] = useState(null); // null = follow the board size
-  const [swaps, setSwaps] = useState(true);
+  const [rerollLimit, setRerollLimit] = useState(Infinity);
   const [place, setPlace] = useState(false);
   const [hand, setHand] = useState(HAND_SIZE);
   const toggleTier = (t) => setTiers((ts) => (ts.includes(t) ? (ts.length > 1 ? ts.filter((x) => x !== t) : ts) : ALL_TIERS.filter((x) => x === t || ts.includes(x))));
@@ -544,8 +560,9 @@ function NewGame({ mode, me, players }) {
   const create = async () => {
     setBusy(true);
     try {
-      const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, cats, mineOnly, tier, slots, turnMode, tiers: isEndless ? null : tiers,
-        backupCount: nb, noSwaps: !swaps, place: !isBingo && !isEndless && place, handSize: hand, players: selected }, me.id);
+      const code = await createGame({ mode, size, difficulty: hideStars ? 'balanced' : difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, cats, mineOnly,
+        tier: hideStars ? 'any' : tier, slots, turnMode, tiers: isEndless || hideStars ? null : tiers,
+        backupCount: nb, noSwaps: rerollLimit === 0, rerollLimit: Number.isFinite(rerollLimit) && rerollLimit > 0 ? rerollLimit : null, place: !isBingo && !isEndless && place, handSize: hand, players: selected }, me.id);
       go(`/g/${code}`);
     } catch (e) {
       toast(`Couldn't create game: ${e.message}`, 'error');
@@ -554,7 +571,7 @@ function NewGame({ mode, me, players }) {
   };
 
   const nb = backups ?? G.backupsFor(size);
-  const pool = cats.length ? poolFor({ cats, mineOnly, tiers: isEndless ? null : tiers }) : [];
+  const pool = cats.length ? poolFor({ cats, mineOnly, tiers: isEndless || hideStars ? null : tiers }) : [];
   const tooFew = isEndless ? !pool.length : pool.length < size * size + nb;
   return html`
     <main class="screen">
@@ -570,10 +587,10 @@ function NewGame({ mode, me, players }) {
         <h2>Who can snap?</h2>
         <${Choice} value=${turnMode} onChange=${setTurnMode}
           options=${[['any', 'Anyone', 'First to snap an item gets the points'], ['turns', 'Take turns', 'Players go one at a time']]} />
-        <h2>Starting difficulty</h2>
+        ${!hideStars && html`<h2>Starting difficulty</h2>
         <${Choice} value=${tier} onChange=${setTier} options=${ENDLESS_TIERS} />
-        <p class="muted small">Whoever snaps an item picks the difficulty and type of the one that replaces it.</p>
-        <${RerollToggle} swaps=${swaps} setSwaps=${setSwaps} />
+        <p class="muted small">Whoever snaps an item picks the difficulty and type of the one that replaces it.</p>`}
+        <${RerollChoice} limit=${rerollLimit} setLimit=${setRerollLimit} />
       </section>` : html`<section class="panel">
         <h2>Board size</h2>
         <${Choice} value=${size} onChange=${setSize}
@@ -583,14 +600,14 @@ function NewGame({ mode, me, players }) {
         <${CatPicker} value=${cats} onChange=${setCats} />
         <${MineToggle} on=${mineOnly} set=${setMineOnly} />
 
-        <h2>Stars</h2>
+        ${!hideStars && html`<h2>Stars</h2>
         <div class="choice">
           ${ALL_TIERS.map((t) => html`<button class=${tiers.includes(t) ? 'sel' : ''} onClick=${() => toggleTier(t)} aria-pressed=${tiers.includes(t)}>
             <b>${TIER_STARS[t]}</b><small>${{ e: 'Easy', m: 'Medium', h: 'Hard' }[t]}</small></button>`)}
         </div>
-        <p class="muted small">Tap to include or leave out a star level.</p>
+        <p class="muted small">Tap to include or leave out a star level.</p>`}
 
-        ${tiers.length > 1 && html`
+        ${!hideStars && tiers.length > 1 && html`
           <h2>Difficulty</h2>
           <${Choice} value=${difficulty} onChange=${setDifficulty}
             options=${Object.entries(G.DIFFICULTY).map(([k, d]) => [k, d.label, d.blurb])} />`}
@@ -631,7 +648,7 @@ function NewGame({ mode, me, players }) {
           <${Choice} value=${nb} onChange=${setBackups} options=${[0, 1, 2, 3, 4, 5].map((k) => [k, String(k)])} />
           <p class="muted small">${nb ? `Each player gets ${nb} backup item${nb === 1 ? '' : 's'} to swap onto their board.` : 'No backup items this game.'}</p>`}
 
-        <${RerollToggle} swaps=${swaps} setSwaps=${setSwaps} />
+        <${RerollChoice} limit=${rerollLimit} setLimit=${setRerollLimit} />
       </section>`}
 
       <section class="panel">
@@ -989,7 +1006,7 @@ function ItemsScreen({ bank }) {
 
   const needle = q.trim().toLowerCase();
   const filtered = all.filter((it) =>
-    (tier === 'all' || it.tier === tier) &&
+    (hideStars || tier === 'all' || it.tier === tier) &&
     (catF === 'all' || it.cat === catF) &&
     (show === 'all' || (show === 'on' && !disabled.has(it.text)) || (show === 'off' && disabled.has(it.text)) || (show === 'custom' && (it.custom || it.mine))) &&
     (!needle || it.text.toLowerCase().includes(needle)));
@@ -1013,10 +1030,10 @@ function ItemsScreen({ bank }) {
           ${[['all', 'All categories'], ...Object.entries(CATEGORY_LABELS)].map(([k, l]) => html`
             <button class="pill ${catF === k ? 'sel' : ''}" onClick=${() => setCatF(k)}>${k !== 'all' ? html`<span class=${`dot cat-${k}`}></span> ` : ''}${l}</button>`)}
         </div>
-        <div class="filter-row">
+        ${!hideStars && html`<div class="filter-row">
           ${[['all', 'All stars'], ['e', '★'], ['m', '★★'], ['h', '★★★']].map(([k, l]) => html`
             <button class="pill ${tier === k ? 'sel' : ''}" onClick=${() => setTier(k)}>${l}</button>`)}
-        </div>
+        </div>`}
         <div class="filter-row">
           ${[['all', 'Any'], ['on', 'On'], ['off', 'Off'], ['custom', 'Mine']].map(([k, l]) => html`
             <button class="pill ${show === k ? 'sel' : ''}" onClick=${() => setShow(k)}>${l}</button>`)}
@@ -1055,7 +1072,9 @@ function ItemsScreen({ bank }) {
 
 // ───────────────────────── board pieces ─────────────────────────
 
-const TIER_STARS = { e: '★', m: '★★', h: '★★★', free: '' };
+const STAR_TEXT = { e: '★', m: '★★', h: '★★★', free: '' };
+// Reads '' for every level while stars are hidden (Settings), so every star label vanishes with one switch.
+const TIER_STARS = new Proxy(STAR_TEXT, { get: (o, k) => (hideStars ? '' : o[k]) });
 
 function Tile({ item, thumb, found, stamp, win, swapTarget, claimColor, onClick }) {
   const cls = ['tile', `cat-${item.cat}`, `tier-${item.tier}`, thumb && 'done', found && !thumb && 'found', win && 'win', swapTarget && 'swap-target']
@@ -1079,7 +1098,8 @@ function Tile({ item, thumb, found, stamp, win, swapTarget, claimColor, onClick 
 /** Your rerolls in this game, at the top right of the info line. */
 function RerollPill({ game, n, show }) {
   if (!show || game.noSwaps) return null;
-  return html`<span class="reroll-pill" title="Rerolls you've used this game">🎲 ${n} reroll${n === 1 ? '' : 's'}</span>`;
+  const cap = rerollCap(game);
+  return html`<span class=${'reroll-pill' + (n >= cap ? ' out' : '')} title="Rerolls you've used this game">🎲 ${Number.isFinite(cap) ? `${n}/${cap}` : n} reroll${n === 1 && !Number.isFinite(cap) ? '' : 's'}</span>`;
 }
 
 function Board({ size, children }) {
@@ -1228,7 +1248,7 @@ function saveDataUrl(dataUrl, name) {
   saveToDevice(new File([bytes], `nycc-hunt-${slug || 'photo'}.jpg`, { type }));
 }
 
-function PhotoButtons({ onFile, onNoPhoto, label = 'Take photo' }) {
+function PhotoButtons({ onFile, label = 'Take photo' }) {
   const capture = useContext(CameraFacing) === 'environment' ? 'environment' : 'user';
   const [camera, setCamera] = useState(false);
   const nativeRef = useRef(null);
@@ -1243,17 +1263,25 @@ function PhotoButtons({ onFile, onNoPhoto, label = 'Take photo' }) {
         ? html`<button class="btn primary huge" onClick=${() => setCamera(true)}>📸 ${label}</button>`
         : html`<label class="btn primary huge">📸 ${label}
             <input type="file" accept="image/*" capture=${capture} onChange=${handle} hidden /></label>`}
-      <div class="row two">
-        <label class="btn ghost">🖼️ Library
-          <input type="file" accept="image/*" onChange=${handle} hidden /></label>
-        ${hasLiveCamera && html`<label class="btn ghost">📱 Phone camera
-          <input ref=${nativeRef} type="file" accept="image/*" capture=${capture} onChange=${handle} hidden /></label>`}
-      </div>
-      ${onNoPhoto && html`<button class="btn ghost" onClick=${onNoPhoto}>✅ Found it, no photo</button>`}
+      <label class="btn ghost">🖼️ From iPhone
+        <input type="file" accept="image/*" onChange=${handle} hidden /></label>
+      ${hasLiveCamera && html`<input ref=${nativeRef} type="file" accept="image/*" capture=${capture} onChange=${handle} hidden />`}
       ${camera && html`<${CameraView} onFile=${onFile} onClose=${() => setCamera(false)}
         onFallback=${() => nativeRef.current?.click()} />`}
     </div>`;
 }
+
+/** A row of small icon buttons along the bottom of a sheet. tools = [icon, label, onClick] (falsy entries skipped). */
+function IconTools({ tools }) {
+  const list = tools.filter(Boolean);
+  if (!list.length) return null;
+  return html`<div class="icon-tools">
+    ${list.map(([icon, label, onClick]) => html`<button class="icon-tool" onClick=${onClick} aria-label=${label}>
+      <span class="ic">${icon}</span><small>${label}</small></button>`)}
+  </div>`;
+}
+
+const confirmBlock = (text) => confirm(`Block "${text}"? It gets swapped out now and turned off in your item list for future games.`);
 
 // Freezes the page behind a sheet. iOS Safari ignores overflow:hidden on body, so pin it in place
 // and restore the scroll position afterwards. Counted, so stacked sheets work.
@@ -1362,14 +1390,15 @@ function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel,
         ${note && html`<p class="muted center">${note}</p>`}
         ${editing ? html`<${ItemForm} initial=${item} submitLabel="Save square" compact
             onSubmit=${(it) => { onEdit(it); setEditing(false); }} onCancel=${() => setEditing(false)} />`
-          : canAct && html`<${PhotoButtons} label=${actionLabel} onFile=${wrap(onFile)} onNoPhoto=${onNoPhoto && wrap(onNoPhoto)} />`}
-        ${!editing && (onReroll || onEdit || onBlock) && html`<div class="row tools">
-          ${onReroll && html`<button class="btn small ghost" onClick=${onReroll}>🎲 Reroll${rerolls ? ` (${rerolls})` : ''}</button>`}
-          ${onEdit && html`<button class="btn small ghost" onClick=${() => setEditing(true)}>✏️ Edit</button>`}
-          ${onBlock && html`<button class="btn small ghost" onClick=${() => confirm(`Block "${item.text}"? It gets swapped out now and turned off in your item list for future games.`) && onBlock()}>🚫 Block</button>`}
-        </div>`}
-        ${photoId && full && html`<button class="btn small ghost" onClick=${() => saveDataUrl(full, item.text)}>💾 Save photo</button>`}
+          : canAct && html`<${PhotoButtons} label=${actionLabel} onFile=${wrap(onFile)} />`}
         ${onRemove && html`<button class="btn small danger" onClick=${wrap(onRemove)}>${removeLabel || 'Remove photo'}</button>`}
+        ${!editing && html`<${IconTools} tools=${[
+          canAct && onNoPhoto && ['✅', 'No photo', wrap(onNoPhoto)],
+          onReroll && ['🎲', `Reroll${rerolls ? ` (${rerolls})` : ''}`, onReroll],
+          onEdit && ['✏️', 'Edit', () => setEditing(true)],
+          onBlock && ['🚫', 'Block', () => confirmBlock(item.text) && onBlock()],
+          photoId && full && ['💾', 'Save photo', () => saveDataUrl(full, item.text)],
+        ]} />`}
         ${busy && html`<div class="busy"><div class="spinner"></div>Uploading…</div>`}
       </div>
     </div>`;
@@ -1527,16 +1556,16 @@ function GameScreen({ code, me, playersById }) {
     <main class="screen game">
       <nav class="topbar">
         <a class="back" href="#/">‹ Home</a>
-        <button class="code-chip" onClick=${share}>Code <b>${code}</b> · Share</button>
+        <span class="topbar-right">
+          ${isPlayer && html`<button class="cam-chip" onClick=${() => pickFacing(facing === 'user' ? 'environment' : 'user')}
+            title="Camera opens to (tap to switch)" aria-label=${`Camera opens to ${facing === 'user' ? 'selfie' : 'back'} camera. Tap to switch.`}>
+            ${facing === 'user' ? '🤳 Selfie' : '📷 Back'}</button>`}
+          <button class="code-chip" onClick=${share}>Code <b>${code}</b> · Share</button>
+        </span>
       </nav>
       ${!isPlayer && html`
         <div class="banner join-banner">You're watching this game.
           <button class="btn primary small" disabled=${joining} onClick=${join}>${joining ? 'Joining…' : 'Join game'}</button></div>`}
-      ${isPlayer && html`<div class="facing-pick">
-        <span>Camera opens to</span>
-        <button class=${'pill' + (facing === 'user' ? ' sel' : '')} onClick=${() => pickFacing('user')}>🤳 Selfie</button>
-        <button class=${'pill' + (facing === 'environment' ? ' sel' : '')} onClick=${() => pickFacing('environment')}>📷 Back</button>
-      </div>`}
       <${CameraFacing.Provider} value=${facing}>
         <${Screen} key=${isPlayer ? 'player' : 'watcher'} game=${game} me=${me} playersById=${playersById} thumbs=${thumbs} isPlayer=${isPlayer} onRematch=${rematch} />
       <//>
@@ -1706,7 +1735,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       onFile=${markSquare} onNoPhoto=${!openMark ? () => markSquare(null) : null}
       onRemove=${canEdit && openMark ? unmark : null} removeLabel=${openMark?.photo ? 'Remove photo' : 'Unmark square'}
       onEdit=${canEdit && !openMark ? editSquare : null}
-      onReroll=${canEdit && !openMark && !game.noSwaps ? reroll : null} rerolls=${board.rerolls || 0}
+      onReroll=${canEdit && !openMark && canReroll(game, board.rerolls) ? reroll : null} rerolls=${board.rerolls || 0}
       onBlock=${canEdit && !openMark ? block : null}
       note=${!openMark && !canEdit ? (timeUp ? "Time's up!" : 'Not found yet.') : null}
       onClose=${() => setOpen(null)} />`}
@@ -1893,7 +1922,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       onFile=${claim} onNoPhoto=${!openClaim ? () => claim(null) : null}
       onRemove=${openClaim?.by === me.id && !over ? unclaim : null} removeLabel=${coop ? 'Unmark square' : 'Undo my claim'}
       onEdit=${isPlayer && !over && !openClaim ? editSquare : null}
-      onReroll=${isPlayer && !over && !openClaim && !game.noSwaps ? reroll : null} rerolls=${game.rerolls?.[me.id] || 0}
+      onReroll=${isPlayer && !over && !openClaim && canReroll(game, game.rerolls?.[me.id]) ? reroll : null} rerolls=${game.rerolls?.[me.id] || 0}
       onBlock=${isPlayer && !over && !openClaim ? block : null}
       note=${!openClaim && over ? 'Game over.' : !openClaim && !isPlayer ? `Join the game to ${coop ? 'help out' : 'claim squares'}.` : null}
       onClose=${() => setOpen(null)} />`}
@@ -2047,7 +2076,7 @@ function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     ${isPlayer && !over && html`<section class="hand">
       <div class="hand-head">
         <h3>Your hand <small>${pending ? '· place your find first' : '· tap one to snap it'}</small></h3>
-        ${!game.noSwaps && html`<button class="btn small ghost" disabled=${!!pending} onClick=${rerollHand}>🎲 Reroll hand</button>`}
+        ${canReroll(game, game.rerolls?.[me.id]) && html`<button class="btn small ghost" disabled=${!!pending} onClick=${rerollHand}>🎲 Reroll hand</button>`}
       </div>
       <div class="hand-grid">
         ${hand.map((it, idx) => html`<button class=${`hand-card cat-${it.cat}`} key=${it.text} disabled=${!!pending} onClick=${() => setHandIdx(idx)}>
@@ -2212,15 +2241,15 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
               <small>${catLabel(slot.item.cat)} · ${pts(slot.item)} pt${pts(slot.item) === 1 ? '' : 's'}</small>
             </button>
             ${canSnap && (single ? html`<div class="endless-actions">
-              <${PhotoButtons} label="Snap it" onFile=${(f) => capture(slot, f).catch((e) => toast(e.message, 'error'))}
-                onNoPhoto=${() => capture(slot, null).catch((e) => toast(e.message, 'error'))} />
-              <div class="row two">
-                ${!game.noSwaps && html`<button class="btn small ghost" onClick=${() => reroll(slot)}>🎲 Reroll${game.rerolls?.[me.id] ? ` (${game.rerolls[me.id]})` : ''}</button>`}
-                <button class="btn small ghost" onClick=${() => confirm(`Block "${slot.item.text}"? It gets swapped out now and turned off in your item list for future games.`) && block(slot)}>🚫 Block</button>
-              </div>
+              <${PhotoButtons} label="Snap it" onFile=${(f) => capture(slot, f).catch((e) => toast(e.message, 'error'))} />
+              <${IconTools} tools=${[
+                ['✅', 'No photo', () => capture(slot, null).catch((e) => toast(e.message, 'error'))],
+                canReroll(game, game.rerolls?.[me.id]) && ['🎲', `Reroll${game.rerolls?.[me.id] ? ` (${game.rerolls[me.id]})` : ''}`, () => reroll(slot)],
+                ['🚫', 'Block', () => confirmBlock(slot.item.text) && block(slot)],
+              ]} />
             </div>` : html`<div class="row slot-actions">
               <button class="btn primary" onClick=${() => setSnapId(slot.id)}>📸 Snap</button>
-              ${!game.noSwaps && html`<button class="btn ghost" onClick=${() => reroll(slot)}>🎲 Reroll</button>`}
+              ${canReroll(game, game.rerolls?.[me.id]) && html`<button class="btn ghost" onClick=${() => reroll(slot)}>🎲 Reroll</button>`}
             </div>`)}
           </div>`)}
       </div>
@@ -2248,7 +2277,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
     ${snapSlot && html`<${SquareModal} item=${snapSlot.item} found=${false} canAct=${canSnap} actionLabel="Snap it"
       onFile=${(f) => capture(snapSlot, f)} onNoPhoto=${() => capture(snapSlot, null)}
-      onReroll=${canSnap && !game.noSwaps ? () => reroll(snapSlot) : null} rerolls=${game.rerolls?.[me.id] || 0}
+      onReroll=${canSnap && canReroll(game, game.rerolls?.[me.id]) ? () => reroll(snapSlot) : null} rerolls=${game.rerolls?.[me.id] || 0}
       onBlock=${canSnap ? () => { block(snapSlot); setSnapId(null); } : null}
       onClose=${() => setSnapId(null)} />`}
     ${viewing && html`<${SquareModal} item=${viewing.item} photoId=${viewing.photo} found=${true}
@@ -2266,11 +2295,11 @@ function PickSlot({ slot, game, me, isPlayer, name, onDeal }) {
     <h2>${mine ? 'You found it! Pick the next item' : `${name(slot.pick.by)} is picking the next item`}</h2>
     ${isPlayer ? html`
       ${!mine && html`<p class="muted small">Anyone can pick if they're busy.</p>`}
-      <h3>Difficulty</h3>
-      <${Choice} value=${tier} onChange=${setTier} options=${ENDLESS_TIERS} />
+      ${!hideStars && html`<h3>Difficulty</h3>
+      <${Choice} value=${tier} onChange=${setTier} options=${ENDLESS_TIERS} />`}
       <h3>Categories</h3>
       <${CatPicker} value=${cats} onChange=${setCats} />
-      <button class="btn primary huge" disabled=${!cats.length} onClick=${() => onDeal(slot, tier, someCats(cats) || null)}>
+      <button class="btn primary huge" disabled=${!cats.length} onClick=${() => onDeal(slot, hideStars ? 'any' : tier, someCats(cats) || null)}>
         ${cats.length ? '🃏 Deal it!' : 'Pick a category'}</button>`
     : html`<p class="muted">Join the game to play.</p>`}
   </section>`;
@@ -2280,6 +2309,12 @@ function PickSlot({ slot, game, me, isPlayer, name, onDeal }) {
 
 function App() {
   const route = useHash();
+  const [, setPrefsTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setPrefsTick((n) => n + 1);
+    addEventListener('nycc:prefs', bump);
+    return () => removeEventListener('nycc:prefs', bump);
+  }, []);
   const players = useWatch((cb) => store.watchAll('players', cb), []);
   const [meId, setMeId] = useState(loadMe);
   const playersById = useMemo(() => Object.fromEntries((players || []).map((p) => [p.id, p])), [players]);
