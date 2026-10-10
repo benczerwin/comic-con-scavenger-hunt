@@ -91,6 +91,12 @@ const diffTag = (g) => (g.tiers?.length === 1 ? '' : ` · ${G.DIFFICULTY[g.diffi
 const tiersTag = (g) => (g.tiers?.length && g.tiers.length < 3 ? ` · ${g.tiers.map((t) => TIER_STARS[t]).join(' ')} only` : '');
 const mixTag = (g) => (MIXES[mixOf(g)]?.short ? ` · ${MIXES[mixOf(g)].short}` : '');
 const BANK_ID = 'itemBank';
+/** Turns an item off in the shared item list so no new board, backup or reroll uses it. */
+function blockItem(text) {
+  return store.transact('settings', BANK_ID, (b) => ({
+    ...(b || {}), custom: b?.custom || [], disabled: [...new Set([...(b?.disabled || []), text])], updatedAt: Date.now(),
+  })).then(() => toast(`🚫 Blocked "${text}". Turn it back on in Edit hunt items.`)).catch((e) => toast(`Couldn't block: ${e.message}`, 'error'));
+}
 
 async function uniqueCode() {
   for (let i = 0; i < 8; i++) {
@@ -378,7 +384,8 @@ function HowToPlay() {
     <li><b>Crossover:</b> everyone shares one board. Snap a square first to claim it with your emblem and get N in a row to win. Or pick <b>Co-op</b> and black out the board together.</li>
     <li><b>Endless:</b> 1–3 items are up at a time. Snap one to score (★ = 1 pt, ★★ = 2, ★★★ = 3), then pick the difficulty and type of the next item. An item that sits while 2 others get found swaps itself out.</li>
     <li><b>Backups:</b> in Solo Series and Crossover you get 1–3 backup items. Tap a backup, then tap an unmarked square to swap it in.</li>
-    <li><b>🎲 Reroll:</b> swap any item for another one with the same stars. Rerolls are counted in the stats.</li>
+    <li><b>🎲 Swap:</b> tap an item you haven't found to see 3 others with the same stars. Pick one to swap it in (swaps count as rerolls in the stats).</li>
+    <li><b>🚫 Block:</b> never want to see an item again? Block it. It's swapped out and turned off in Edit hunt items.</li>
     <li><b>Stars:</b> ★ items are everywhere, ★★★ items are rare finds.</li>
     <li><b>Friends:</b> share the game code or link. Anyone can join mid-game.</li>
   </ul>`;
@@ -1116,7 +1123,23 @@ function useScrollLock() {
   }, []);
 }
 
-function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel, onFile, onNoPhoto, onRemove, removeLabel, onEdit, onReroll, rerolls = 0, onClose, note }) {
+/** Three same-star items to swap in, shown right away. getAlts() draws them; onPick(item) swaps one in. */
+function SwapChoices({ item, getAlts, onPick, rerolls = 0 }) {
+  const [alts, setAlts] = useState(getAlts);
+  useEffect(() => setAlts(getAlts()), [item.text]);
+  return html`<div class="alts">
+    <h3>Or swap it for <small>(same stars${rerolls ? ` · ${rerolls} reroll${rerolls === 1 ? '' : 's'} used` : ''})</small></h3>
+    ${alts.length ? alts.map((it) => html`<button class=${`alt-row cat-${it.cat}`} key=${it.text} onClick=${() => onPick(it)}>
+      <span class="icon">${it.icon}</span><span class="grow"><b>${it.text}</b><small>${CATEGORY_LABELS[it.cat] || ''}</small></span>
+      <span class="stars">${TIER_STARS[it.tier]}</span></button>`)
+      : html`<p class="muted small">No other items with these stars to swap in.</p>`}
+    ${alts.length > 0 && html`<button class="btn small ghost" onClick=${() => setAlts(getAlts())}>🎲 3 others</button>`}
+  </div>`;
+}
+
+/** getAlts/onReroll: swap choices for an unfound square. onBlock: swap it out and turn it off for good. */
+function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel, onFile, onNoPhoto, onRemove, removeLabel, onEdit,
+  getAlts, onReroll, onBlock, rerolls = 0, onClose, note }) {
   const [full, setFull] = useState(null);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1159,9 +1182,10 @@ function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel,
         ${editing ? html`<${ItemForm} initial=${item} submitLabel="Save square" compact
             onSubmit=${(it) => { onEdit(it); setEditing(false); }} onCancel=${() => setEditing(false)} />`
           : canAct && html`<${PhotoButtons} label=${actionLabel} onFile=${wrap(onFile)} onNoPhoto=${onNoPhoto && wrap(onNoPhoto)} />`}
-        ${!editing && (onEdit || onReroll) && html`<div class="row two">
-          ${onReroll && html`<button class="btn small ghost" onClick=${onReroll}>🎲 Reroll${rerolls ? ` (${rerolls} used)` : ''}</button>`}
-          ${onEdit && html`<button class="btn small ghost" onClick=${() => setEditing(true)}>✏️ Edit square</button>`}
+        ${!editing && onReroll && getAlts && html`<${SwapChoices} item=${item} getAlts=${getAlts} onPick=${onReroll} rerolls=${rerolls} />`}
+        ${!editing && (onEdit || onBlock) && html`<div class="row tools">
+          ${onEdit && html`<button class="btn small ghost" onClick=${() => setEditing(true)}>✏️ Edit</button>`}
+          ${onBlock && html`<button class="btn small ghost" onClick=${() => confirm(`Block "${item.text}"? It gets swapped out now and turned off in your item list for future games.`) && onBlock()}>🚫 Block</button>`}
         </div>`}
         ${photoId && full && html`<button class="btn small ghost" onClick=${() => saveDataUrl(full, item.text)}>💾 Save photo</button>`}
         ${onRemove && html`<button class="btn small danger" onClick=${wrap(onRemove)}>${removeLabel || 'Remove photo'}</button>`}
@@ -1423,14 +1447,20 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     toast('Square updated');
   };
 
-  const reroll = () => {
-    const i = open;
-    const exclude = [...board.items, ...(board.backups || [])].map((it) => it.text);
-    const it = G.rerollItem(board.items[i], { exclude, pool: poolFor(game) });
-    if (!it) return toast('No other items at this level to roll.', 'error');
+  const boardExclude = () => [...board.items, ...(board.backups || [])].map((it) => it.text);
+  const altsFor = () => G.rerollOptions(board.items[open], { exclude: boardExclude(), pool: poolFor(game) });
+  const swapSquare = (i, it, counted) => {
     const items = board.items.slice();
     items[i] = it;
-    store.patch('boards', boardId(board), { items, rerolls: (board.rerolls || 0) + 1 }).catch((e) => toast(e.message, 'error'));
+    store.patch('boards', boardId(board), { items, ...(counted ? { rerolls: (board.rerolls || 0) + 1 } : {}) })
+      .catch((e) => toast(e.message, 'error'));
+  };
+  const reroll = (it) => swapSquare(open, it, true);
+  const block = () => {
+    const i = open, cur = board.items[i];
+    blockItem(cur.text);
+    const it = G.rerollItem(cur, { exclude: boardExclude(), pool: poolFor(game).filter((x) => x.text !== cur.text) });
+    if (it) swapSquare(i, it, false);
   };
 
   const unmark = async () => {
@@ -1485,7 +1515,8 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       onFile=${markSquare} onNoPhoto=${!openMark ? () => markSquare(null) : null}
       onRemove=${canEdit && openMark ? unmark : null} removeLabel=${openMark?.photo ? 'Remove photo' : 'Unmark square'}
       onEdit=${canEdit && !openMark ? editSquare : null}
-      onReroll=${canEdit && !openMark ? reroll : null} rerolls=${board.rerolls || 0}
+      getAlts=${altsFor} onReroll=${canEdit && !openMark ? reroll : null} rerolls=${board.rerolls || 0}
+      onBlock=${canEdit && !openMark ? block : null}
       note=${!openMark && !canEdit ? (timeUp ? "Time's up!" : 'Not found yet.') : null}
       onClose=${() => setOpen(null)} />`}
   `;
@@ -1589,20 +1620,29 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     } catch (e) { toast(`Editing needs a connection: ${e.message}`, 'error'); }
   };
 
-  const reroll = async () => {
-    const i = open;
+  const sharedExclude = (g) => [...g.items, ...Object.values(g.backups || {}).flat()].map((it) => it.text);
+  const altsFor = () => G.rerollOptions(game.items[open], { exclude: sharedExclude(game), pool: poolFor(game) });
+  // Swaps square i to `choice` (or a random same-star item when choice is null).
+  const swapShared = async (i, choice, { counted, avoid } = {}) => {
     try {
       const res = await store.transact('games', game.code, (g) => {
         if (!g || g.claims?.[i] || g.winner) return undefined;
-        const exclude = [...g.items, ...Object.values(g.backups || {}).flat()].map((it) => it.text);
-        const it = G.rerollItem(g.items[i], { exclude, pool: poolFor(g) });
+        const taken = sharedExclude(g);
+        const it = choice && !taken.includes(choice.text) ? choice
+          : G.rerollItem(g.items[i], { exclude: taken, pool: poolFor(g).filter((x) => x.text !== avoid) });
         if (!it) return undefined;
         g.items[i] = it;
-        g.rerolls = { ...g.rerolls, [me.id]: (g.rerolls?.[me.id] || 0) + 1 };
+        if (counted) g.rerolls = { ...g.rerolls, [me.id]: (g.rerolls?.[me.id] || 0) + 1 };
         return g;
       });
-      if (!res.ok) toast(res.data?.claims?.[i] ? 'Someone already got that one!' : 'No other items at this level to roll.', 'error');
-    } catch (e) { toast(`Rerolling needs a connection: ${e.message}`, 'error'); }
+      if (!res.ok) toast(res.data?.claims?.[i] ? 'Someone already got that one!' : 'No other items with these stars to swap in.', 'error');
+    } catch (e) { toast(`Swapping needs a connection: ${e.message}`, 'error'); }
+  };
+  const reroll = (it) => swapShared(open, it, { counted: true });
+  const block = () => {
+    const i = open, cur = game.items[i];
+    blockItem(cur.text);
+    swapShared(i, null, { avoid: cur.text });
   };
 
   const unclaim = async () => {
@@ -1663,7 +1703,8 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       onFile=${claim} onNoPhoto=${!openClaim ? () => claim(null) : null}
       onRemove=${openClaim?.by === me.id && !over ? unclaim : null} removeLabel=${coop ? 'Unmark square' : 'Undo my claim'}
       onEdit=${isPlayer && !over && !openClaim ? editSquare : null}
-      onReroll=${isPlayer && !over && !openClaim ? reroll : null} rerolls=${game.rerolls?.[me.id] || 0}
+      getAlts=${altsFor} onReroll=${isPlayer && !over && !openClaim ? reroll : null} rerolls=${game.rerolls?.[me.id] || 0}
+      onBlock=${isPlayer && !over && !openClaim ? block : null}
       note=${!openClaim && over ? 'Game over.' : !openClaim && !isPlayer ? `Join the game to ${coop ? 'help out' : 'claim squares'}.` : null}
       onClose=${() => setOpen(null)} />`}
   `;
@@ -1729,20 +1770,26 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     toast(`+${pts(slot.item)} pt${pts(slot.item) === 1 ? '' : 's'}! 🎉`, 'good');
   };
 
-  const reroll = async (slot) => {
+  const usedTexts = (g, s2) => [...(g.history || []).map((h) => h.item.text), ...s2.active.filter((x) => x.item).map((x) => x.item.text)];
+  const altsFor = (slot) => G.rerollOptions(slot.item, { exclude: usedTexts(game, st), pool: poolFor({ mix: slot.mix }) });
+  // Replaces a slot's item with `choice` (or a random same-star one) and logs why it left.
+  const swapSlot = async (slot, choice, why) => {
     const res = await update((s2, g) => {
       const a = slotOf(s2, slot.id);
-      if (!a?.item || (s2.turnMode === 'turns' && s2.turn !== me.id)) return false;
-      const exclude = [...(g.history || []).map((h) => h.item.text), ...s2.active.filter((x) => x.item).map((x) => x.item.text)];
-      const it = G.drawEndless(poolFor({ mix: a.mix }), { tier: a.item.tier, exclude });
-      if (!it || it.text === a.item.text) return false;
-      g.history = [...(g.history || []), { item: a.item, by: me.id, rerolled: true, at: Date.now() }];
+      if (!a?.item || a.item.text !== slot.item.text || (s2.turnMode === 'turns' && s2.turn !== me.id)) return false;
+      const used = usedTexts(g, s2);
+      const it = choice && !used.includes(choice.text) ? choice
+        : G.drawEndless(poolFor({ mix: a.mix }).filter((x) => x.text !== a.item.text), { tier: a.item.tier, exclude: used });
+      if (!it) return false;
+      g.history = [...(g.history || []), { item: a.item, by: me.id, [why]: true, at: Date.now() }];
       a.item = it;
       a.seen = 0;
-      g.rerolls = { ...g.rerolls, [me.id]: (g.rerolls?.[me.id] || 0) + 1 };
-    }).catch((e) => { toast(`Rerolling needs a connection: ${e.message}`, 'error'); return null; });
-    if (res && !res.ok) toast('No other items at this level to roll.', 'error');
+      if (why === 'rerolled') g.rerolls = { ...g.rerolls, [me.id]: (g.rerolls?.[me.id] || 0) + 1 };
+    }).catch((e) => { toast(`Swapping needs a connection: ${e.message}`, 'error'); return null; });
+    if (res && !res.ok) toast(turns && st.turn !== me.id ? "It's not your turn." : 'That item just changed. Try again.', 'error');
   };
+  const reroll = (slot, it) => swapSlot(slot, it, 'rerolled');
+  const block = (slot) => { blockItem(slot.item.text); swapSlot(slot, null, 'blocked'); };
 
   const deal = async (slot, tier, mix) => {
     const res = await update((s2, g) => {
@@ -1811,10 +1858,11 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
             ${canSnap && (single ? html`<div class="endless-actions">
               <${PhotoButtons} label="Snap it" onFile=${(f) => capture(slot, f).catch((e) => toast(e.message, 'error'))}
                 onNoPhoto=${() => capture(slot, null).catch((e) => toast(e.message, 'error'))} />
-              <button class="btn small ghost" onClick=${() => reroll(slot)}>🎲 Reroll${game.rerolls?.[me.id] ? ` (${game.rerolls[me.id]} used)` : ''}</button>
+              <${SwapChoices} item=${slot.item} getAlts=${() => altsFor(slot)} onPick=${(it) => reroll(slot, it)} rerolls=${game.rerolls?.[me.id] || 0} />
+              <button class="btn small ghost" onClick=${() => confirm(`Block "${slot.item.text}"? It gets swapped out now and turned off in your item list for future games.`) && block(slot)}>🚫 Block this item</button>
             </div>` : html`<div class="row slot-actions">
               <button class="btn primary" onClick=${() => setSnapId(slot.id)}>📸 Snap</button>
-              <button class="btn ghost" onClick=${() => reroll(slot)}>🎲 Reroll</button>
+              <button class="btn ghost" onClick=${() => setSnapId(slot.id)}>🎲 Swap</button>
             </div>`)}
           </div>`)}
       </div>
@@ -1828,7 +1876,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
           const found = G.isFind(h);
           const who = h.by ? html`<${Emblem} id=${playersById[h.by]?.emblem} size=${16} /> ${name(h.by)} · ` : '';
           const what = found ? `${TIER_STARS[h.item.tier]} +${pts(h.item)}`
-            : h.rerolled ? '🎲 Rerolled' : h.expired ? `⌛ Swapped out after ${G.ENDLESS_EXPIRE_AFTER} other finds` : 'Skipped';
+            : h.rerolled ? '🎲 Rerolled' : h.blocked ? '🚫 Blocked' : h.expired ? `⌛ Swapped out after ${G.ENDLESS_EXPIRE_AFTER} other finds` : 'Skipped';
           return html`<button class=${'hist-row' + (found ? '' : ' skipped')} key=${h.i} onClick=${() => found && setOpen(h.i)}>
             ${h.photo && thumbs[h.photo] ? html`<img src=${thumbs[h.photo].thumb} alt="" />` : html`<span class=${`hist-icon cat-${h.item.cat}`}>${h.item.icon}</span>`}
             <span class="grow"><b>${h.item.text}</b><small>${who}${what}</small></span>
@@ -1842,7 +1890,8 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
     ${snapSlot && html`<${SquareModal} item=${snapSlot.item} found=${false} canAct=${canSnap} actionLabel="Snap it"
       onFile=${(f) => capture(snapSlot, f)} onNoPhoto=${() => capture(snapSlot, null)}
-      onReroll=${canSnap ? () => reroll(snapSlot) : null} rerolls=${game.rerolls?.[me.id] || 0}
+      getAlts=${() => altsFor(snapSlot)} onReroll=${canSnap ? (it) => reroll(snapSlot, it) : null} rerolls=${game.rerolls?.[me.id] || 0}
+      onBlock=${canSnap ? () => { block(snapSlot); setSnapId(null); } : null}
       onClose=${() => setSnapId(null)} />`}
     ${viewing && html`<${SquareModal} item=${viewing.item} photoId=${viewing.photo} found=${true}
       thumb=${viewing.photo && thumbs[viewing.photo]?.thumb} by=${playersById[viewing.by]} at=${viewing.at}

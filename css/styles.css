@@ -580,3 +580,20 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .collage-filter { margin: var(--s3) 0 0; }
 
 .players-list .item-row:first-child { border-top: 0; }
+
+/* reroll choices + square tools */
+.row.tools > * { flex: 1; }
+.alts { display: flex; flex-direction: column; gap: var(--s2); }
+.alts h3 { margin: 0 0 var(--s1); font-size: 0.8rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+.alts h3 small { text-transform: none; font-weight: 700; }
+.alts .row.two { margin-top: var(--s2); }
+.alt-row {
+  display: flex; align-items: center; gap: var(--s3); text-align: left; font: inherit; color: inherit; cursor: pointer;
+  background: var(--tile, #fff); border: 3px solid var(--ink); border-radius: 12px; padding: var(--s3); box-shadow: 3px 3px 0 var(--ink);
+  background-image: radial-gradient(rgba(0, 0, 0, 0.12) 1px, transparent 1.2px); background-size: 6px 6px;
+}
+.alt-row:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+.alt-row .icon { font-size: 2rem; line-height: 1; }
+.alt-row b { display: block; line-height: 1.2; }
+.alt-row small { font-weight: 800; color: rgba(0, 0, 0, 0.6); font-size: 0.75rem; }
+.alt-row .stars { font-size: 0.85rem; color: rgba(0, 0, 0, 0.55); }

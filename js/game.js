@@ -34,6 +34,12 @@ function shuffle(arr) {
 
 const strip = ({ tier, icon, text, cat }) => ({ tier, icon, text, cat });
 
+/** Up to n distinct random items of the same tier as `item` (for picking a swap). */
+export function rerollOptions(item, { exclude = [], pool = ITEMS, n = 3 }) {
+  const skip = new Set([...exclude, item.text]);
+  return shuffle(pool.filter((it) => it.tier === item.tier && !skip.has(it.text))).slice(0, n).map(strip);
+}
+
 /** A random item of the same tier as `item`, skipping anything in `exclude` (texts). Null if none left. */
 export function rerollItem(item, { exclude = [], pool = ITEMS }) {
   const skip = new Set([...exclude, item.text]);
@@ -189,7 +195,7 @@ export function playerStats(games, boards) {
 // ── Endless: one challenge at a time, players take turns.
 export const ENDLESS_POINTS = { e: 1, m: 2, h: 3 };
 /** Endless history also logs items that left the board without being found (rerolled, swapped out, skipped). */
-export const isFind = (h) => !h.skipped && !h.rerolled && !h.expired;
+export const isFind = (h) => !h.skipped && !h.rerolled && !h.expired && !h.blocked;
 /** An active item is swapped out automatically once this many other items get found while it's up. */
 export const ENDLESS_EXPIRE_AFTER = 2;
 
