@@ -370,11 +370,6 @@ function SettingsScreen({ me }) {
         <span class="grow"><b>Edit hunt items</b><small>${itemPool.length} items on · Turn ideas off or add your own</small></span>
         <span>›</span>
       </a>
-      <a class="panel items-link" href="#/profile">
-        <span class="icon"><${Emblem} id=${me.emblem} size=${36} /></span>
-        <span class="grow"><b>Players</b><small>Edit your hero, switch player or remove players</small></span>
-        <span>›</span>
-      </a>
       <section class="panel">
         <h2>How to play</h2>
         <${HowToPlay} />
