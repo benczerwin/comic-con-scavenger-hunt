@@ -254,7 +254,7 @@ a { color: inherit; }
 .cat-merch { --tile: var(--c-merch); }
 .cat-chars { --tile: var(--c-cosplay); }
 .cat-themes { --tile: var(--c-action); }
-.cat-desc { --tile: var(--c-hot); }
+.cat-desc { --tile: #ffa94d; }
 .cat-items { --tile: var(--c-merch); }
 .cat-free { --tile: var(--c-free); }
 .tile.tier-free .txt { font-family: var(--display); font-size: calc(min(680px, 100vw) / var(--n) * 0.16); letter-spacing: 1px; }

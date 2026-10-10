@@ -118,7 +118,8 @@ function makeBoard(game, pid) {
   };
 }
 
-const HAND_SIZE = 9;
+const HAND_SIZE = 9; // default; each empty-board game can pick its own
+const handSize = (g) => g.handSize || HAND_SIZE;
 /** Items already in play in an empty-board game (on the board, in any hand, or waiting to be placed). */
 const placeUsed = (g) => [
   ...(g.items || []).filter(Boolean), ...Object.values(g.hands || {}).flat(), ...Object.values(g.pending || {}).map((p) => p.item),
@@ -180,9 +181,9 @@ async function createGame(settings, createdBy) {
     for (const pid of game.players) store.put('boards', `${code}_${pid}`, makeBoard(game, pid)).catch(fail);
   } else if (settings.place) {
     // Empty board: everyone gets a hand of items; snap one, then place it on any empty square.
-    const game = { ...base, coop: !!settings.coop, connect: settings.connect, place: true,
+    const game = { ...base, coop: !!settings.coop, connect: settings.connect, place: true, handSize: settings.handSize || HAND_SIZE,
       items: Array(settings.size * settings.size).fill(null), claims: {}, hands: {}, pending: {} };
-    for (const pid of game.players) game.hands[pid] = drawHand(game, HAND_SIZE);
+    for (const pid of game.players) game.hands[pid] = drawHand(game, handSize(game));
     store.put('games', code, game).catch(fail);
   } else {
     const card = G.generateCard({ size: settings.size, difficulty: settings.difficulty, pool: poolFor(settings), backups: backupCount(settings) });
@@ -219,6 +220,7 @@ async function confirmDelete(code) {
 }
 
 const settingsFrom = (g) => ({
+  handSize: g.handSize,
   mode: g.mode, size: g.size, difficulty: g.difficulty, players: g.players,
   winRule: g.winRule, minutes: g.minutes || 60, freeCenter: g.freeCenter, sameCard: g.sameCard, connect: g.connect, coop: !!g.coop, cats: g.cats, mix: g.cats ? undefined : g.mix, tier: g.lastPick?.tier, tiers: g.tiers,
   backupCount: g.mode === 'endless' ? undefined : backupCount(g), noSwaps: !!g.noSwaps, place: !!g.place,
@@ -426,7 +428,7 @@ function HowToPlay() {
   return html`<ul class="how-list">
     <li><b>Solo Series:</b> everyone gets their own board. Tap a square, take a photo, and it's marked. Pick a win rule when you start.</li>
     <li><b>Crossover:</b> everyone shares one board. Snap a square first to claim it with your emblem and get N in a row to win. Or pick <b>Co-op</b> and black out the board together.</li>
-    <li><b>Empty board</b> (Crossover option): the board starts blank and everyone gets a hand of ${HAND_SIZE} items. Snap one, then place it on any empty square. Pick your spots to block or build a line.</li>
+    <li><b>Empty board</b> (Crossover option): the board starts blank and everyone gets a hand of items (9 by default). Snap one, then place it on any empty square. Pick your spots to block or build a line.</li>
     <li><b>Endless:</b> 1–3 items are up at a time. Snap one to score (★ = 1 pt, ★★ = 2, ★★★ = 3), then pick the difficulty and type of the next item. An item that sits while 2 others get found swaps itself out.</li>
     <li><b>Backups:</b> in Solo Series and Crossover you get 1–3 backup items. Tap a backup, then tap an unmarked square to swap it in.</li>
     <li><b>🎲 Reroll:</b> swap an item you haven't found for a random one with the same stars. Rerolls are counted in the stats.</li>
@@ -496,6 +498,7 @@ function NewGame({ mode, me, players }) {
   const [backups, setBackups] = useState(null); // null = follow the board size
   const [swaps, setSwaps] = useState(true);
   const [place, setPlace] = useState(false);
+  const [hand, setHand] = useState(HAND_SIZE);
   const toggleTier = (t) => setTiers((ts) => (ts.includes(t) ? (ts.length > 1 ? ts.filter((x) => x !== t) : ts) : ALL_TIERS.filter((x) => x === t || ts.includes(x))));
   const [selected, setSelected] = useState([me.id]);
   const [busy, setBusy] = useState(false);
@@ -511,7 +514,7 @@ function NewGame({ mode, me, players }) {
     setBusy(true);
     try {
       const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, cats, tier, slots, turnMode, tiers: isEndless ? null : tiers,
-        backupCount: nb, noSwaps: !swaps, place: !isBingo && !isEndless && place, players: selected }, me.id);
+        backupCount: nb, noSwaps: !swaps, place: !isBingo && !isEndless && place, handSize: hand, players: selected }, me.id);
       go(`/g/${code}`);
     } catch (e) {
       toast(`Couldn't create game: ${e.message}`, 'error');
@@ -576,7 +579,11 @@ function NewGame({ mode, me, players }) {
         ` : html`
           <h2>Board</h2>
           <${Choice} value=${place} onChange=${setPlace}
-            options=${[[false, 'Filled', 'Items start on the board'], [true, 'Empty', `Snap from your hand of ${HAND_SIZE}, then place it`]]} />
+            options=${[[false, 'Filled', 'Items start on the board'], [true, 'Empty', 'Snap from your hand, then place it']]} />
+          ${place && html`
+            <h2>Hand size</h2>
+            <${Choice} value=${hand} onChange=${setHand} options=${[3, 5, 7, 9, 12].map((k) => [k, String(k)])} />
+            <p class="muted small">Each player holds ${hand} items to pick from. A new one is dealt after each snap.</p>`}
           <h2>Game style</h2>
           <${Choice} value=${coop} onChange=${setCoop}
             options=${[[false, 'Race', 'Claim squares, first to get N in a row wins'], [true, 'Co-op', 'Team up and black out the whole board together']]} />
@@ -1417,7 +1424,7 @@ function GameScreen({ code, me, playersById }) {
       const res = await store.transact('games', code, (g) => {
         if (!g || g.players.includes(me.id)) return undefined;
         g.players.push(me.id);
-        if (g.mode === 'versus' && g.place) g.hands = { ...g.hands, [me.id]: drawHand(g, HAND_SIZE) };
+        if (g.mode === 'versus' && g.place) g.hands = { ...g.hands, [me.id]: drawHand(g, handSize(g)) };
         else if (g.mode === 'versus') g.backups = { ...g.backups, [me.id]: versusBackups(g) };
         return g;
       });
@@ -1851,7 +1858,7 @@ function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       if (g.pending?.[me.id] || h[idx]?.text !== card.text) return false;
       h.splice(idx, 1);
       g.pending = { ...g.pending, [me.id]: { item: card, photo, at: Date.now() } };
-      g.hands = { ...g.hands, [me.id]: [...h, ...drawHand(g, HAND_SIZE - h.length)] };
+      g.hands = { ...g.hands, [me.id]: [...h, ...drawHand(g, handSize(g) - h.length)] };
     });
     setHandIdx(null);
     if (!res.ok) toast('Place your last find before snapping another.', 'error');
@@ -1885,7 +1892,7 @@ function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     await tx((g) => {
       const p = g.pending?.[me.id];
       if (!p) return false;
-      g.hands = { ...g.hands, [me.id]: [p.item, ...(g.hands?.[me.id] || []).slice(0, HAND_SIZE - 1)] };
+      g.hands = { ...g.hands, [me.id]: [p.item, ...(g.hands?.[me.id] || []).slice(0, handSize(g) - 1)] };
       const pend = { ...g.pending }; delete pend[me.id]; g.pending = pend;
     });
   };
