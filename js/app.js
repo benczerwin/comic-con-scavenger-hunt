@@ -1,7 +1,7 @@
 import { html, render, useState, useEffect, useMemo, useRef } from '../vendor/htm-preact.js';
 import * as store from './store.js';
 import { EMBLEMS, emblemById, emblemSVG } from './data/emblems.js';
-import { CATEGORY_LABELS, ITEMS } from './data/items.js';
+import { CATEGORY_LABELS, CHARACTER_CATS, ITEMS } from './data/items.js';
 import * as G from './game.js';
 import { processPhoto } from './photo.js';
 import { renderRecap } from './recap.js';
@@ -69,6 +69,8 @@ const firstName = (p) => (p?.name || 'Someone').split(' ')[0];
 
 // Current item pool (built-ins minus disabled + custom). Kept in sync with settings/itemBank by <App>.
 let itemPool = ITEMS;
+/** The items a game draws from: everything on, or only characters/shows/movies. */
+const poolFor = (g) => (g.charsOnly ? itemPool.filter((it) => CHARACTER_CATS.includes(it.cat)) : itemPool);
 const BANK_ID = 'itemBank';
 
 async function uniqueCode() {
@@ -80,7 +82,7 @@ async function uniqueCode() {
 }
 
 function makeBoard(game, pid) {
-  const card = game.card || G.generateCard({ size: game.size, difficulty: game.difficulty, freeCenter: game.freeCenter, pool: itemPool });
+  const card = game.card || G.generateCard({ size: game.size, difficulty: game.difficulty, freeCenter: game.freeCenter, pool: poolFor(game) });
   return {
     gameId: game.code, playerId: pid, size: game.size,
     items: card.items, backups: card.backups, marks: {}, createdAt: Date.now(),
@@ -88,14 +90,14 @@ function makeBoard(game, pid) {
 }
 
 function versusBackups(game) {
-  return G.generateCard({ size: game.size, difficulty: game.difficulty, exclude: game.items.map((i) => i.text), pool: itemPool }).backups;
+  return G.generateCard({ size: game.size, difficulty: game.difficulty, exclude: game.items.map((i) => i.text), pool: poolFor(game) }).backups;
 }
 
 async function createGame(settings, createdBy) {
   const code = await uniqueCode();
   const base = {
     code, mode: settings.mode, size: settings.size, difficulty: settings.difficulty,
-    players: settings.players, createdBy, createdAt: Date.now(), winner: null,
+    players: settings.players, charsOnly: !!settings.charsOnly, createdBy, createdAt: Date.now(), winner: null,
   };
   const fail = (e) => toast(`Sync problem: ${e.message}`, 'error');
   if (settings.mode === 'bingo') {
@@ -107,13 +109,13 @@ async function createGame(settings, createdBy) {
       freeCenter: settings.freeCenter,
       sameCard: settings.sameCard,
       card: settings.sameCard
-        ? G.generateCard({ size: settings.size, difficulty: settings.difficulty, freeCenter: settings.freeCenter, pool: itemPool })
+        ? G.generateCard({ size: settings.size, difficulty: settings.difficulty, freeCenter: settings.freeCenter, pool: poolFor(settings) })
         : null,
     };
     store.put('games', code, game).catch(fail);
     for (const pid of game.players) store.put('boards', `${code}_${pid}`, makeBoard(game, pid)).catch(fail);
   } else {
-    const card = G.generateCard({ size: settings.size, difficulty: settings.difficulty, pool: itemPool });
+    const card = G.generateCard({ size: settings.size, difficulty: settings.difficulty, pool: poolFor(settings) });
     const game = { ...base, coop: !!settings.coop, connect: settings.connect, items: card.items, claims: {}, backups: {} };
     for (const pid of game.players) game.backups[pid] = versusBackups(game);
     store.put('games', code, game).catch(fail);
@@ -148,7 +150,7 @@ async function confirmDelete(code) {
 
 const settingsFrom = (g) => ({
   mode: g.mode, size: g.size, difficulty: g.difficulty, players: g.players,
-  winRule: g.winRule, minutes: g.minutes || 60, freeCenter: g.freeCenter, sameCard: g.sameCard, connect: g.connect, coop: !!g.coop,
+  winRule: g.winRule, minutes: g.minutes || 60, freeCenter: g.freeCenter, sameCard: g.sameCard, connect: g.connect, coop: !!g.coop, charsOnly: !!g.charsOnly,
 });
 
 // ───────────────────────── screens ─────────────────────────
@@ -332,6 +334,7 @@ function NewGame({ mode, me, players }) {
   const [sameCard, setSameCard] = useState(false);
   const [connect, setConnect] = useState(G.defaultConnect(3));
   const [coop, setCoop] = useState(false);
+  const [charsOnly, setCharsOnly] = useState(false);
   const [selected, setSelected] = useState([me.id]);
   const [busy, setBusy] = useState(false);
 
@@ -345,7 +348,7 @@ function NewGame({ mode, me, players }) {
   const create = async () => {
     setBusy(true);
     try {
-      const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, players: selected }, me.id);
+      const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, charsOnly, players: selected }, me.id);
       go(`/g/${code}`);
     } catch (e) {
       toast(`Couldn't create game: ${e.message}`, 'error');
@@ -354,7 +357,8 @@ function NewGame({ mode, me, players }) {
   };
 
   const nb = G.backupsFor(size);
-  const tooFew = itemPool.length < size * size + nb;
+  const pool = poolFor({ charsOnly });
+  const tooFew = pool.length < size * size + nb;
   return html`
     <main class="screen">
       <nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>
@@ -365,6 +369,10 @@ function NewGame({ mode, me, players }) {
         <${Choice} value=${size} onChange=${setSize}
           options=${G.SIZES.map((s) => [s, `${s}×${s}`, `${s * s} squares`])} />
         <p class="muted small">Each player gets <b>${nb} backup${nb > 1 ? 's' : ''}</b> to swap in.</p>
+
+        <h2>What's on the board?</h2>
+        <${Choice} value=${charsOnly} onChange=${setCharsOnly}
+          options=${[[false, 'Everything', 'Characters, con moments & challenges'], [true, 'Characters only', 'Specific characters, shows, movies & games']]} />
 
         <h2>Difficulty</h2>
         <${Choice} value=${difficulty} onChange=${setDifficulty}
@@ -406,8 +414,8 @@ function NewGame({ mode, me, players }) {
         <p class="muted small">Not listed? They can join anytime with the game code.</p>
       </section>
 
-      <p class="muted small center">Drawing from <b>${itemPool.length}</b> hunt items · <a href="#/items">edit list</a></p>
-      ${tooFew && html`<div class="banner warn">Not enough items turned on for a ${size}×${size} board. Turn more on in the item list.</div>`}
+      <p class="muted small center">Drawing from <b>${pool.length}</b> ${charsOnly ? 'character ' : ''}hunt items · <a href="#/items">edit list</a></p>
+      ${tooFew && html`<div class="banner warn">Not enough items turned on for a ${size}×${size} board. Turn more on in the item list${charsOnly ? ' or pick Everything' : ''}.</div>`}
       <button class="btn primary huge" disabled=${busy || tooFew} onClick=${create}>${busy ? 'Creating…' : 'Start the hunt!'}</button>
     </main>`;
 }
@@ -977,7 +985,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
   const reroll = () => {
     const i = open;
     const exclude = [...board.items, ...(board.backups || [])].map((it) => it.text);
-    const it = G.rerollItem(board.items[i], { exclude, pool: itemPool });
+    const it = G.rerollItem(board.items[i], { exclude, pool: poolFor(game) });
     if (!it) return toast('No other items at this level to roll.', 'error');
     const items = board.items.slice();
     items[i] = it;
@@ -995,7 +1003,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
   return html`
     ${celebrate && html`<${Confetti} />`}
     <div class="game-info">
-      <span>${game.size}×${game.size} · ${G.WIN_RULES[game.winRule]?.label} · ${G.DIFFICULTY[game.difficulty]?.label}</span>
+      <span>${game.size}×${game.size} · ${G.WIN_RULES[game.winRule]?.label} · ${G.DIFFICULTY[game.difficulty]?.label}${game.charsOnly ? ' · Characters' : ''}</span>
       ${game.endsAt && html`<span class="timer ${timeUp ? 'over' : ''}">⏱ ${timeUp ? "Time's up!" : G.fmtDuration(game.endsAt - now)}</span>`}
     </div>
     ${winnerId && html`<${WinBanner}
@@ -1146,7 +1154,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       const res = await store.transact('games', game.code, (g) => {
         if (!g || g.claims?.[i] || g.winner) return undefined;
         const exclude = [...g.items, ...Object.values(g.backups || {}).flat()].map((it) => it.text);
-        const it = G.rerollItem(g.items[i], { exclude, pool: itemPool });
+        const it = G.rerollItem(g.items[i], { exclude, pool: poolFor(g) });
         if (!it) return undefined;
         g.items[i] = it;
         g.rerolls = { ...g.rerolls, [me.id]: (g.rerolls?.[me.id] || 0) + 1 };
@@ -1172,7 +1180,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
   return html`
     ${celebrate && html`<${Confetti} />`}
-    <div class="game-info"><span>${game.size}×${game.size} · ${coop ? 'Co-op: black out the board' : `${game.connect} in a row wins`} · ${G.DIFFICULTY[game.difficulty]?.label}</span></div>
+    <div class="game-info"><span>${game.size}×${game.size} · ${coop ? 'Co-op: black out the board' : `${game.connect} in a row wins`} · ${G.DIFFICULTY[game.difficulty]?.label}${game.charsOnly ? ' · Characters' : ''}</span></div>
     ${over && html`<${WinBanner}
       text=${game.winner === 'team' ? 'TEAM BLACKOUT!' : game.winner === 'draw' ? "IT'S A DRAW!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
       sub=${coop ? `All ${total} squares found together. 🎉` : !winLine && game.winner !== 'draw' ? 'Board full: most squares wins.' : null}
