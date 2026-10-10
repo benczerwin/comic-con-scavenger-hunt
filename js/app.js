@@ -574,7 +574,86 @@ function BackupTray({ backups, swapIdx, setSwapIdx, canUse }) {
     </section>`;
 }
 
+const FACING_KEY = 'nycc-hunt:facing';
+const hasLiveCamera = !!navigator.mediaDevices?.getUserMedia;
+
+/** Full-screen in-app camera (getUserMedia). Never fires the flash; front camera by default. */
+function CameraView({ onFile, onClose, onFallback }) {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const [facing, setFacing] = useState(() => { try { return localStorage.getItem(FACING_KEY) || 'user'; } catch { return 'user'; } });
+  const [shot, setShot] = useState(null); // { url, blob }
+  const [error, setError] = useState(null);
+  const [ready, setReady] = useState(false);
+
+  const stop = () => { streamRef.current?.getTracks().forEach((t) => t.stop()); streamRef.current = null; };
+
+  useEffect(() => {
+    let cancelled = false;
+    setReady(false);
+    stop();
+    navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } },
+    }).then((stream) => {
+      if (cancelled) return stream.getTracks().forEach((t) => t.stop());
+      streamRef.current = stream;
+      const v = videoRef.current;
+      v.srcObject = stream;
+      v.play().catch(() => {});
+    }).catch((e) => {
+      if (!cancelled) setError(e.name === 'NotAllowedError'
+        ? 'Camera access was blocked. Allow it in your browser settings, or use the phone camera instead.'
+        : "Couldn't start the camera on this device.");
+    });
+    try { localStorage.setItem(FACING_KEY, facing); } catch {}
+    return () => { cancelled = true; };
+  }, [facing]);
+  useEffect(() => () => { stop(); if (shot?.url) URL.revokeObjectURL(shot.url); }, []);
+
+  const snap = () => {
+    const v = videoRef.current;
+    if (!v?.videoWidth) return;
+    const c = document.createElement('canvas');
+    c.width = v.videoWidth; c.height = v.videoHeight;
+    c.getContext('2d').drawImage(v, 0, 0);
+    c.toBlob((blob) => setShot({ blob, url: URL.createObjectURL(blob) }), 'image/jpeg', 0.92);
+  };
+  const retake = () => { URL.revokeObjectURL(shot.url); setShot(null); };
+  const use = () => {
+    const file = new File([shot.blob], 'photo.jpg', { type: 'image/jpeg' });
+    stop();
+    onClose();
+    onFile(file);
+  };
+
+  return html`
+    <div class="camera">
+      <video ref=${videoRef} class=${facing === 'user' ? 'mirror' : ''} playsinline muted autoplay
+        onLoadedData=${() => setReady(true)} style=${shot ? 'display:none' : ''}></video>
+      ${shot && html`<img class="camera-shot" src=${shot.url} alt="Your photo" />`}
+      ${!ready && !shot && !error && html`<div class="camera-msg"><div class="spinner"></div>Starting camera…</div>`}
+      ${error && html`<div class="camera-msg">
+        <p>${error}</p>
+        <button class="btn primary" onClick=${() => { stop(); onClose(); onFallback(); }}>📱 Use phone camera</button>
+      </div>`}
+      <button class="cam-btn cam-close" onClick=${() => { stop(); onClose(); }} aria-label="Close camera">✕</button>
+      <div class="camera-bar">
+        ${shot ? html`
+          <button class="btn ghost" onClick=${retake}>↺ Retake</button>
+          <button class="btn primary" onClick=${use}>✓ Use photo</button>
+        ` : html`
+          <span class="cam-spacer"></span>
+          <button class="shutter" onClick=${snap} disabled=${!ready} aria-label="Take photo"><span></span></button>
+          <button class="cam-btn" onClick=${() => setFacing(facing === 'user' ? 'environment' : 'user')} aria-label="Flip camera">🔄</button>
+        `}
+      </div>
+    </div>`;
+}
+
 function PhotoButtons({ onFile, onNoPhoto, label = 'Take photo' }) {
+  const [camera, setCamera] = useState(false);
+  const nativeRef = useRef(null);
   const handle = (e) => {
     const f = e.target.files?.[0];
     e.target.value = '';
@@ -582,11 +661,19 @@ function PhotoButtons({ onFile, onNoPhoto, label = 'Take photo' }) {
   };
   return html`
     <div class="photo-btns">
-      <label class="btn primary huge">📸 ${label}
-        <input type="file" accept="image/*" capture="user" onChange=${handle} hidden /></label>
-      <label class="btn ghost">🖼️ Choose from library
-        <input type="file" accept="image/*" onChange=${handle} hidden /></label>
+      ${hasLiveCamera
+        ? html`<button class="btn primary huge" onClick=${() => setCamera(true)}>📸 ${label}</button>`
+        : html`<label class="btn primary huge">📸 ${label}
+            <input type="file" accept="image/*" capture="user" onChange=${handle} hidden /></label>`}
+      <div class="row two">
+        <label class="btn ghost">🖼️ Library
+          <input type="file" accept="image/*" onChange=${handle} hidden /></label>
+        ${hasLiveCamera && html`<label class="btn ghost">📱 Phone camera
+          <input ref=${nativeRef} type="file" accept="image/*" capture="user" onChange=${handle} hidden /></label>`}
+      </div>
       ${onNoPhoto && html`<button class="btn ghost" onClick=${onNoPhoto}>✅ Found it, no photo</button>`}
+      ${camera && html`<${CameraView} onFile=${onFile} onClose=${() => setCamera(false)}
+        onFallback=${() => nativeRef.current?.click()} />`}
     </div>`;
 }
 

@@ -402,3 +402,32 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .board.s3 .tile .check { font-size: 5rem; }
 .tile.found[style*='--claim'] { box-shadow: inset 0 0 0 4px var(--claim); }
 .found-note { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; font-weight: 800; margin: 0; }
+
+/* in-app camera */
+.row.two > * { flex: 1; }
+.camera { position: fixed; inset: 0; z-index: 200; background: #000; color: #fff; }
+.camera video, .camera .camera-shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.camera video.mirror { transform: scaleX(-1); }
+.camera-msg {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 16px; padding: 24px; text-align: center; font-weight: 800;
+}
+.camera-msg .spinner { border-color: #fff; border-top-color: var(--yellow); }
+.cam-btn {
+  width: 52px; height: 52px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.7);
+  background: rgba(0,0,0,0.45); color: #fff; font-size: 1.4rem; display: flex; align-items: center; justify-content: center;
+}
+.cam-close { position: absolute; top: max(16px, env(safe-area-inset-top)); left: 16px; }
+.camera-bar {
+  position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: space-around;
+  gap: 16px; padding: 24px 24px max(28px, env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, rgba(0,0,0,0.6));
+}
+.camera-bar .btn { flex: 1; max-width: 200px; font-size: 1.1rem; padding: 14px; }
+.cam-spacer { width: 52px; }
+.shutter {
+  width: 78px; height: 78px; border-radius: 50%; border: 5px solid #fff; background: transparent; padding: 5px;
+}
+.shutter span { display: block; width: 100%; height: 100%; border-radius: 50%; background: #fff; transition: transform 0.1s; }
+.shutter:active span { transform: scale(0.88); }
+.shutter:disabled { opacity: 0.4; }
