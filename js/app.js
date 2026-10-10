@@ -428,7 +428,7 @@ function HowToPlay() {
   return html`<ul class="how-list">
     <li><b>Solo Series:</b> everyone gets their own board. Tap a square, take a photo, and it's marked. Pick a win rule when you start.</li>
     <li><b>Crossover:</b> everyone shares one board. Snap a square first to claim it with your emblem and get N in a row to win. Or pick <b>Co-op</b> and black out the board together.</li>
-    <li><b>Empty board</b> (Crossover option): the board starts blank and everyone gets a hand of items (9 by default). Snap one, then place it on any empty square. Pick your spots to block or build a line.</li>
+    <li><b>Empty board</b> (Crossover option): the board starts blank and everyone gets a hand of items (9 by default). Snap one, place it on any empty square, and you get a whole new hand. Pick your spots to block or build a line.</li>
     <li><b>Endless:</b> 1–3 items are up at a time. Snap one to score (★ = 1 pt, ★★ = 2, ★★★ = 3), then pick the difficulty and type of the next item. An item that sits while 2 others get found swaps itself out.</li>
     <li><b>Backups:</b> in Solo Series and Crossover you get 1–3 backup items. Tap a backup, then tap an unmarked square to swap it in.</li>
     <li><b>🎲 Reroll:</b> swap an item you haven't found for a random one with the same stars. Rerolls are counted in the stats.</li>
@@ -583,7 +583,7 @@ function NewGame({ mode, me, players }) {
           ${place && html`
             <h2>Hand size</h2>
             <${Choice} value=${hand} onChange=${setHand} options=${[3, 5, 7, 9, 12].map((k) => [k, String(k)])} />
-            <p class="muted small">Each player holds ${hand} items to pick from. A new one is dealt after each snap.</p>`}
+            <p class="muted small">Each player holds ${hand} items to pick from. Snap one and you get a whole new hand.</p>`}
           <h2>Game style</h2>
           <${Choice} value=${coop} onChange=${setCoop}
             options=${[[false, 'Race', 'Claim squares, first to get N in a row wins'], [true, 'Co-op', 'Team up and black out the whole board together']]} />
@@ -1860,20 +1860,20 @@ function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
   const tx = (fn) => store.transact('games', game.code, (g) => (!g || g.winner ? undefined : fn(g) === false ? undefined : g));
 
-  // 1) Snap a card from your hand: it waits as "pending" until you place it. The hand refills right away.
+  // 1) Snap a card from your hand: it waits as "pending" until you place it, and you get a whole new hand.
   const snap = async (idx, file) => {
     const card = hand[idx];
     const photo = file ? await uploadPhoto(file, game.code, me.id) : null;
     const res = await tx((g) => {
-      const h = (g.hands?.[me.id] || []).slice();
-      if (g.pending?.[me.id] || h[idx]?.text !== card.text) return false;
-      h.splice(idx, 1);
+      const old = g.hands?.[me.id] || [];
+      if (g.pending?.[me.id] || old[idx]?.text !== card.text) return false;
       g.pending = { ...g.pending, [me.id]: { item: card, photo, at: Date.now() } };
-      g.hands = { ...g.hands, [me.id]: [...h, ...drawHand(g, handSize(g) - h.length)] };
+      g.hands = { ...g.hands, [me.id]: [] }; // free the old cards so the new hand can be anything
+      g.hands = { ...g.hands, [me.id]: drawHand(g, handSize(g), old.map((it) => it.text)) };
     });
     setHandIdx(null);
     if (!res.ok) toast('Place your last find before snapping another.', 'error');
-    else toast('Got it! Now tap an empty square to place it.', 'good');
+    else toast('Got it! Now tap an empty square to place it. You have a fresh hand.', 'good');
   };
 
   // 2) Place the pending find on an empty square.
