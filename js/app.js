@@ -80,7 +80,15 @@ const MIXES = {
   obj: { label: 'Fandom gear', blurb: 'Like a Pokémon bag', short: 'Fandom gear' },
 };
 const mixOf = (g) => g.mix || (g.charsOnly ? 'char' : 'all'); // charsOnly: games made before mixes existed
-const poolFor = (g) => { const m = mixOf(g); return m === 'all' ? itemPool : itemPool.filter((it) => itemKind(it) === m); };
+const poolFor = (g) => {
+  const m = mixOf(g);
+  const tiers = g.tiers?.length ? new Set(g.tiers) : null; // star levels this game allows (all when unset)
+  return itemPool.filter((it) => (m === 'all' || itemKind(it) === m) && (!tiers || tiers.has(it.tier)));
+};
+const ALL_TIERS = ['e', 'm', 'h'];
+// Difficulty only means something when more than one star level is in play.
+const diffTag = (g) => (g.tiers?.length === 1 ? '' : ` · ${G.DIFFICULTY[g.difficulty]?.label}`);
+const tiersTag = (g) => (g.tiers?.length && g.tiers.length < 3 ? ` · ${g.tiers.map((t) => TIER_STARS[t]).join(' ')} only` : '');
 const mixTag = (g) => (MIXES[mixOf(g)]?.short ? ` · ${MIXES[mixOf(g)].short}` : '');
 const BANK_ID = 'itemBank';
 
@@ -108,7 +116,8 @@ async function createGame(settings, createdBy) {
   const code = await uniqueCode();
   const base = {
     code, mode: settings.mode, size: settings.size, difficulty: settings.difficulty,
-    players: settings.players, mix: settings.mix || 'all', createdBy, createdAt: Date.now(), winner: null,
+    players: settings.players, mix: settings.mix || 'all',
+    ...(settings.tiers?.length && settings.tiers.length < 3 ? { tiers: settings.tiers } : {}), createdBy, createdAt: Date.now(), winner: null,
   };
   const fail = (e) => toast(`Sync problem: ${e.message}`, 'error');
   if (settings.mode === 'endless') {
@@ -178,7 +187,7 @@ async function confirmDelete(code) {
 
 const settingsFrom = (g) => ({
   mode: g.mode, size: g.size, difficulty: g.difficulty, players: g.players,
-  winRule: g.winRule, minutes: g.minutes || 60, freeCenter: g.freeCenter, sameCard: g.sameCard, connect: g.connect, coop: !!g.coop, mix: mixOf(g), tier: g.lastPick?.tier,
+  winRule: g.winRule, minutes: g.minutes || 60, freeCenter: g.freeCenter, sameCard: g.sameCard, connect: g.connect, coop: !!g.coop, mix: mixOf(g), tier: g.lastPick?.tier, tiers: g.tiers,
   slots: g.mode === 'endless' ? G.endlessState(g).slots : undefined, turnMode: g.mode === 'endless' ? G.endlessState(g).turnMode : undefined,
 });
 
@@ -416,6 +425,8 @@ function NewGame({ mode, me, players }) {
   const [connect, setConnect] = useState(G.defaultConnect(3));
   const [coop, setCoop] = useState(false);
   const [mix, setMix] = useState('all');
+  const [tiers, setTiers] = useState(ALL_TIERS);
+  const toggleTier = (t) => setTiers((ts) => (ts.includes(t) ? (ts.length > 1 ? ts.filter((x) => x !== t) : ts) : ALL_TIERS.filter((x) => x === t || ts.includes(x))));
   const [selected, setSelected] = useState([me.id]);
   const [busy, setBusy] = useState(false);
 
@@ -429,7 +440,7 @@ function NewGame({ mode, me, players }) {
   const create = async () => {
     setBusy(true);
     try {
-      const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, mix, tier, slots, turnMode, players: selected }, me.id);
+      const code = await createGame({ mode, size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, mix, tier, slots, turnMode, tiers: isEndless ? null : tiers, players: selected }, me.id);
       go(`/g/${code}`);
     } catch (e) {
       toast(`Couldn't create game: ${e.message}`, 'error');
@@ -438,7 +449,7 @@ function NewGame({ mode, me, players }) {
   };
 
   const nb = G.backupsFor(size);
-  const pool = poolFor({ mix });
+  const pool = poolFor({ mix, tiers: isEndless ? null : tiers });
   const tooFew = isEndless ? !pool.length : pool.length < size * size + nb;
   return html`
     <main class="screen">
@@ -467,9 +478,17 @@ function NewGame({ mode, me, players }) {
         <${Choice} value=${mix} onChange=${setMix}
           options=${Object.entries(MIXES).map(([k, m]) => [k, m.label, m.blurb])} />
 
-        <h2>Difficulty</h2>
-        <${Choice} value=${difficulty} onChange=${setDifficulty}
-          options=${Object.entries(G.DIFFICULTY).map(([k, d]) => [k, d.label, d.blurb])} />
+        <h2>Stars</h2>
+        <div class="choice">
+          ${ALL_TIERS.map((t) => html`<button class=${tiers.includes(t) ? 'sel' : ''} onClick=${() => toggleTier(t)} aria-pressed=${tiers.includes(t)}>
+            <b>${TIER_STARS[t]}</b><small>${{ e: 'Easy', m: 'Medium', h: 'Hard' }[t]}</small></button>`)}
+        </div>
+        <p class="muted small">Tap to include or leave out a star level.</p>
+
+        ${tiers.length > 1 && html`
+          <h2>Difficulty</h2>
+          <${Choice} value=${difficulty} onChange=${setDifficulty}
+            options=${Object.entries(G.DIFFICULTY).map(([k, d]) => [k, d.label, d.blurb])} />`}
 
         ${isBingo ? html`
           <h2>How do you win?</h2>
@@ -1425,7 +1444,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
   return html`
     ${celebrate && html`<${Confetti} />`}
     <div class="game-info">
-      <span>${game.size}×${game.size} · ${G.WIN_RULES[game.winRule]?.label} · ${G.DIFFICULTY[game.difficulty]?.label}${mixTag(game)}</span>
+      <span>${game.size}×${game.size} · ${G.WIN_RULES[game.winRule]?.label}${diffTag(game)}${mixTag(game)}${tiersTag(game)}</span>
       ${game.endsAt && html`<span class="timer ${timeUp ? 'over' : ''}">⏱ ${timeUp ? "Time's up!" : G.fmtDuration(game.endsAt - now)}</span>`}
     </div>
     ${winnerId && html`<${WinBanner}
@@ -1602,7 +1621,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
   return html`
     ${celebrate && html`<${Confetti} />`}
-    <div class="game-info"><span>${game.size}×${game.size} · ${coop ? 'Co-op: black out the board' : `${game.connect} in a row wins`} · ${G.DIFFICULTY[game.difficulty]?.label}${mixTag(game)}</span></div>
+    <div class="game-info"><span>${game.size}×${game.size} · ${coop ? 'Co-op: black out the board' : `${game.connect} in a row wins`}${diffTag(game)}${mixTag(game)}${tiersTag(game)}</span></div>
     ${over && html`<${WinBanner}
       text=${game.winner === 'team' ? 'TEAM BLACKOUT!' : game.winner === 'draw' ? "IT'S A DRAW!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
       sub=${coop ? `All ${total} squares found together. 🎉` : !winLine && game.winner !== 'draw' ? 'Board full: most squares wins.' : null}
