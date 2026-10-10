@@ -576,3 +576,5 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .game-filters .small-select { flex: 1; min-width: 0; padding: var(--s2) 36px var(--s2) var(--s3); font-size: 0.95rem; }
 .how-list { padding-left: 18px; margin: 0; }
 .how-list li { margin-bottom: var(--s2); line-height: 1.4; }
+
+.collage-filter { margin: var(--s3) 0 0; }

@@ -544,10 +544,13 @@ function CollageScreen({ me, playersById }) {
   const games = useWatch((cb) => store.watchAll('games', cb), []);
   const [picked, setPicked] = useState(() => new Set());
   const [onlyMine, setOnlyMine] = useState(true);
+  const [day, setDay] = useState('all');
   const [recap, setRecap] = useState(null);
 
-  const list = (games || []).filter((g) => !onlyMine || g.players?.includes(me.id))
-    .sort((a, b) => b.createdAt - a.createdAt);
+  const dayKey = (t) => new Date(t).toDateString();
+  const mine = (games || []).filter((g) => !onlyMine || g.players?.includes(me.id)).sort((a, b) => b.createdAt - a.createdAt);
+  const days = [...new Set(mine.map((g) => dayKey(g.createdAt)))];
+  const list = mine.filter((g) => day === 'all' || dayKey(g.createdAt) === day);
   const toggle = (code) => setPicked((s) => { const n = new Set(s); n.has(code) ? n.delete(code) : n.add(code); return n; });
   const allOn = list.length > 0 && list.every((g) => picked.has(g.code));
   const setAll = () => setPicked(allOn ? new Set() : new Set(list.map((g) => g.code)));
@@ -583,10 +586,16 @@ function CollageScreen({ me, playersById }) {
 
       <section class="panel">
         <div class="row">
-          <span class="grow nowrap"><b>${picked.size}</b> selected</span>
+          <span class="grow nowrap"><b>${chosen.length}</b> selected</span>
           <button class=${'pill' + (onlyMine ? ' sel' : '')} onClick=${() => setOnlyMine(!onlyMine)}>Only my games</button>
           <button class="pill" onClick=${setAll} disabled=${!list.length}>${allOn ? 'Select none' : 'Select all'}</button>
         </div>
+        ${days.length > 1 && html`<div class="row game-filters collage-filter">
+          <select class="text small-select" value=${day} onChange=${(e) => setDay(e.target.value)} aria-label="Filter by date">
+            <option value="all">All dates</option>
+            ${days.map((d) => html`<option value=${d}>${dayLabel(d)}</option>`)}
+          </select>
+        </div>`}
       </section>
 
       ${games === undefined ? html`<p class="muted center">Loading games…</p>`
