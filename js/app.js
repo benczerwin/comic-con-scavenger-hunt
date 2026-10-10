@@ -869,7 +869,7 @@ function PhotoButtons({ onFile, onNoPhoto, label = 'Take photo' }) {
     </div>`;
 }
 
-function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel, onFile, onNoPhoto, onRemove, removeLabel, onEdit, onReroll, rerolls = 0, rerollMax = 0, onClose, note }) {
+function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel, onFile, onNoPhoto, onRemove, removeLabel, onEdit, onReroll, rerolls = 0, onClose, note }) {
   const [full, setFull] = useState(null);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -912,8 +912,7 @@ function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel,
             onSubmit=${(it) => { onEdit(it); setEditing(false); }} onCancel=${() => setEditing(false)} />`
           : canAct && html`<${PhotoButtons} label=${actionLabel} onFile=${wrap(onFile)} onNoPhoto=${onNoPhoto && wrap(onNoPhoto)} />`}
         ${!editing && (onEdit || onReroll) && html`<div class="row two">
-          ${onReroll && html`<button class="btn small ghost" onClick=${onReroll} disabled=${rerolls >= rerollMax}>
-            🎲 ${rerolls >= rerollMax ? 'No rerolls left' : `Reroll (${rerollMax - rerolls} left)`}</button>`}
+          ${onReroll && html`<button class="btn small ghost" onClick=${onReroll}>🎲 Reroll${rerolls ? ` (${rerolls} used)` : ''}</button>`}
           ${onEdit && html`<button class="btn small ghost" onClick=${() => setEditing(true)}>✏️ Edit square</button>`}
         </div>`}
         ${photoId && full && html`<button class="btn small ghost" onClick=${() => saveDataUrl(full, item.text)}>💾 Save photo</button>`}
@@ -1165,7 +1164,6 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
   const reroll = () => {
     const i = open;
-    if ((board.rerolls || 0) >= G.rerollLimit(game)) return toast('No rerolls left on this card.', 'error');
     const exclude = [...board.items, ...(board.backups || [])].map((it) => it.text);
     const it = G.rerollItem(board.items[i], { exclude, pool: poolFor(game) });
     if (!it) return toast('No other items at this level to roll.', 'error');
@@ -1226,7 +1224,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       onFile=${markSquare} onNoPhoto=${!openMark ? () => markSquare(null) : null}
       onRemove=${canEdit && openMark ? unmark : null} removeLabel=${openMark?.photo ? 'Remove photo' : 'Unmark square'}
       onEdit=${canEdit && !openMark ? editSquare : null}
-      onReroll=${canEdit && !openMark ? reroll : null} rerolls=${board.rerolls || 0} rerollMax=${G.rerollLimit(game)}
+      onReroll=${canEdit && !openMark ? reroll : null} rerolls=${board.rerolls || 0}
       note=${!openMark && !canEdit ? (timeUp ? "Time's up!" : 'Not found yet.') : null}
       onClose=${() => setOpen(null)} />`}
   `;
@@ -1334,7 +1332,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     const i = open;
     try {
       const res = await store.transact('games', game.code, (g) => {
-        if (!g || g.claims?.[i] || g.winner || G.totalRerolls(g) >= G.rerollLimit(g)) return undefined;
+        if (!g || g.claims?.[i] || g.winner) return undefined;
         const exclude = [...g.items, ...Object.values(g.backups || {}).flat()].map((it) => it.text);
         const it = G.rerollItem(g.items[i], { exclude, pool: poolFor(g) });
         if (!it) return undefined;
@@ -1342,11 +1340,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         g.rerolls = { ...g.rerolls, [me.id]: (g.rerolls?.[me.id] || 0) + 1 };
         return g;
       });
-      if (!res.ok) {
-        const d = res.data;
-        toast(d?.claims?.[i] ? 'Someone already got that one!'
-          : d && G.totalRerolls(d) >= G.rerollLimit(d) ? 'No rerolls left on this board.' : 'No other items at this level to roll.', 'error');
-      }
+      if (!res.ok) toast(res.data?.claims?.[i] ? 'Someone already got that one!' : 'No other items at this level to roll.', 'error');
     } catch (e) { toast(`Rerolling needs a connection: ${e.message}`, 'error'); }
   };
 
@@ -1408,7 +1402,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       onFile=${claim} onNoPhoto=${!openClaim ? () => claim(null) : null}
       onRemove=${openClaim?.by === me.id && !over ? unclaim : null} removeLabel=${coop ? 'Unmark square' : 'Undo my claim'}
       onEdit=${isPlayer && !over && !openClaim ? editSquare : null}
-      onReroll=${isPlayer && !over && !openClaim ? reroll : null} rerolls=${G.totalRerolls(game)} rerollMax=${G.rerollLimit(game)}
+      onReroll=${isPlayer && !over && !openClaim ? reroll : null} rerolls=${game.rerolls?.[me.id] || 0}
       note=${!openClaim && over ? 'Game over.' : !openClaim && !isPlayer ? `Join the game to ${coop ? 'help out' : 'claim squares'}.` : null}
       onClose=${() => setOpen(null)} />`}
   `;

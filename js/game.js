@@ -34,10 +34,6 @@ function shuffle(arr) {
 
 const strip = ({ tier, icon, text, cat }) => ({ tier, icon, text, cat });
 
-/** Rerolls allowed: one per square (per card in bingo, shared on a showdown board). */
-export const rerollLimit = (game) => game.size * game.size;
-export const totalRerolls = (game) => Object.values(game.rerolls || {}).reduce((a, b) => a + b, 0);
-
 /** A random item of the same tier as `item`, skipping anything in `exclude` (texts). Null if none left. */
 export function rerollItem(item, { exclude = [], pool = ITEMS }) {
   const skip = new Set([...exclude, item.text]);
