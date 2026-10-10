@@ -590,6 +590,7 @@ function BackupTray({ backups, swapIdx, setSwapIdx, canUse }) {
 
 const FACING_KEY = 'nycc-hunt:facing';
 const WIDE_KEY = 'nycc-hunt:wide';
+const SAVE_KEY = 'nycc-hunt:save-photos';
 const hasLiveCamera = !!navigator.mediaDevices?.getUserMedia;
 const loadPref = (key, dflt) => { try { return localStorage.getItem(key) ?? dflt; } catch { return dflt; } };
 const savePref = (key, val) => { try { localStorage.setItem(key, val); } catch {} };
@@ -602,6 +603,7 @@ function CameraView({ onFile, onClose, onFallback }) {
   const streamRef = useRef(null);
   const [facing, setFacing] = useState(() => loadPref(FACING_KEY, 'user'));
   const [wide, setWide] = useState(() => loadPref(WIDE_KEY, '1') === '1');
+  const [save, setSave] = useState(() => loadPref(SAVE_KEY, '1') === '1');
   const [shot, setShot] = useState(null); // { url, blob }
   const [error, setError] = useState(null);
   const [ready, setReady] = useState(false);
@@ -640,16 +642,18 @@ function CameraView({ onFile, onClose, onFallback }) {
   const snap = () => {
     const v = videoRef.current;
     if (!v?.videoWidth) return;
-    // Uploads are shrunk to 1280px anyway; capping here keeps big full-sensor frames fast.
-    const scale = Math.min(1, 2048 / Math.max(v.videoWidth, v.videoHeight));
+    // Full quality for the camera-roll copy; uploads get shrunk to 1280px later.
+    const scale = Math.min(1, 4096 / Math.max(v.videoWidth, v.videoHeight));
     const c = document.createElement('canvas');
     c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
     c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
     c.toBlob((blob) => setShot({ blob, url: URL.createObjectURL(blob) }), 'image/jpeg', 0.92);
   };
   const retake = () => { URL.revokeObjectURL(shot.url); setShot(null); };
+  const toggleSave = () => { savePref(SAVE_KEY, save ? '0' : '1'); setSave(!save); };
   const use = () => {
-    const file = new File([shot.blob], 'photo.jpg', { type: 'image/jpeg' });
+    const file = new File([shot.blob], `nycc-hunt-${Date.now()}.jpg`, { type: 'image/jpeg' });
+    if (save) saveToDevice(file); // must run inside this tap so the share sheet is allowed
     stop();
     onClose();
     onFile(file);
@@ -666,6 +670,8 @@ function CameraView({ onFile, onClose, onFallback }) {
         <button class="btn primary" onClick=${() => { stop(); onClose(); onFallback(); }}>📱 Use phone camera</button>
       </div>`}
       <button class="cam-btn cam-close" onClick=${() => { stop(); onClose(); }} aria-label="Close camera">✕</button>
+      ${shot && html`<button class=${'cam-pill' + (save ? ' on' : '')} onClick=${toggleSave}
+        aria-pressed=${save}>${save ? '✓ Save to Photos' : 'Save to Photos'}</button>`}
       ${!shot && !error && html`<button class=${'cam-pill cam-wide' + (wide ? ' on' : '')} onClick=${() => setWide(!wide)}
         aria-pressed=${wide}>${wide ? '⤡ Wide' : '⤢ Normal'}</button>`}
       <div class="camera-bar">
@@ -679,6 +685,27 @@ function CameraView({ onFile, onClose, onFallback }) {
         `}
       </div>
     </div>`;
+}
+
+/** Saves a photo to the device. iPhone/Android: opens the share sheet (tap "Save Image").
+ *  Desktop: downloads it. Web pages can't write to Photos silently. */
+function saveToDevice(file) {
+  if (navigator.canShare?.({ files: [file] })) {
+    navigator.share({ files: [file] }).catch(() => {});
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  const a = Object.assign(document.createElement('a'), { href: url, download: file.name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+function saveDataUrl(dataUrl, name) {
+  const [head, b64] = dataUrl.split(',');
+  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const type = head.match(/:(.*?);/)?.[1] || 'image/jpeg';
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+  saveToDevice(new File([bytes], `nycc-hunt-${slug || 'photo'}.jpg`, { type }));
 }
 
 function PhotoButtons({ onFile, onNoPhoto, label = 'Take photo' }) {
@@ -754,6 +781,7 @@ function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel,
             🎲 ${rerolls >= rerollMax ? 'No rerolls left' : `Reroll (${rerollMax - rerolls} left)`}</button>`}
           ${onEdit && html`<button class="btn small ghost" onClick=${() => setEditing(true)}>✏️ Edit square</button>`}
         </div>`}
+        ${photoId && full && html`<button class="btn small ghost" onClick=${() => saveDataUrl(full, item.text)}>💾 Save photo</button>`}
         ${onRemove && html`<button class="btn small danger" onClick=${wrap(onRemove)}>${removeLabel || 'Remove photo'}</button>`}
         ${busy && html`<div class="busy"><div class="spinner"></div>Uploading…</div>`}
       </div>
