@@ -699,7 +699,7 @@ function PhotoButtons({ onFile, onNoPhoto, label = 'Take photo' }) {
     </div>`;
 }
 
-function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel, onFile, onNoPhoto, onRemove, removeLabel, onEdit, onClose, note }) {
+function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel, onFile, onNoPhoto, onRemove, removeLabel, onEdit, onReroll, rerolls = 0, onClose, note }) {
   const [full, setFull] = useState(null);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -741,7 +741,10 @@ function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel,
         ${editing ? html`<${ItemForm} initial=${item} submitLabel="Save square" compact
             onSubmit=${(it) => { onEdit(it); setEditing(false); }} onCancel=${() => setEditing(false)} />`
           : canAct && html`<${PhotoButtons} label=${actionLabel} onFile=${wrap(onFile)} onNoPhoto=${onNoPhoto && wrap(onNoPhoto)} />`}
-        ${onEdit && !editing && html`<button class="btn small ghost" onClick=${() => setEditing(true)}>✏️ Edit square</button>`}
+        ${!editing && (onEdit || onReroll) && html`<div class="row two">
+          ${onReroll && html`<button class="btn small ghost" onClick=${onReroll}>🎲 Reroll${rerolls ? ` (${rerolls} used)` : ''}</button>`}
+          ${onEdit && html`<button class="btn small ghost" onClick=${() => setEditing(true)}>✏️ Edit square</button>`}
+        </div>`}
         ${onRemove && html`<button class="btn small danger" onClick=${wrap(onRemove)}>${removeLabel || 'Remove photo'}</button>`}
         ${busy && html`<div class="busy"><div class="spinner"></div>Uploading…</div>`}
       </div>
@@ -971,6 +974,16 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     toast('Square updated');
   };
 
+  const reroll = () => {
+    const i = open;
+    const exclude = [...board.items, ...(board.backups || [])].map((it) => it.text);
+    const it = G.rerollItem(board.items[i], { exclude, pool: itemPool });
+    if (!it) return toast('No other items at this level to roll.', 'error');
+    const items = board.items.slice();
+    items[i] = it;
+    store.patch('boards', boardId(board), { items, rerolls: (board.rerolls || 0) + 1 }).catch((e) => toast(e.message, 'error'));
+  };
+
   const unmark = async () => {
     store.patch('boards', boardId(board), { [`marks.${open}`]: store.DELETE }).catch((e) => toast(e.message, 'error'));
     setOpen(null);
@@ -997,7 +1010,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         return html`<button class="score ${viewing === b.playerId ? 'sel' : ''}" key=${b.playerId} onClick=${() => { setViewing(b.playerId); setSwapIdx(null); }}>
           <${Emblem} id=${p?.emblem} size=${34} />
           <span class="nm">${b.playerId === me.id ? 'You' : firstName(p)}${winnerId === b.playerId ? ' 🏆' : ''}</span>
-          <span class="pts">${s.found} found ·${s.lines} line${s.lines === 1 ? '' : 's'}${game.winRule === 'most' ? ` · ${s.points}pt` : ''}</span>
+          <span class="pts">${s.found} found ·${s.lines} line${s.lines === 1 ? '' : 's'}${game.winRule === 'most' ? ` · ${s.points}pt` : ''}${b.rerolls ? ` · 🎲${b.rerolls}` : ''}</span>
         </button>`;
       })}
     </div>
@@ -1023,6 +1036,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       onFile=${markSquare} onNoPhoto=${!openMark ? () => markSquare(null) : null}
       onRemove=${canEdit && openMark ? unmark : null} removeLabel=${openMark?.photo ? 'Remove photo' : 'Unmark square'}
       onEdit=${canEdit && !openMark ? editSquare : null}
+      onReroll=${canEdit && !openMark ? reroll : null} rerolls=${board.rerolls || 0}
       note=${!openMark && !canEdit ? (timeUp ? "Time's up!" : 'Not found yet.') : null}
       onClose=${() => setOpen(null)} />`}
   `;
@@ -1126,6 +1140,22 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     } catch (e) { toast(`Editing needs a connection: ${e.message}`, 'error'); }
   };
 
+  const reroll = async () => {
+    const i = open;
+    try {
+      const res = await store.transact('games', game.code, (g) => {
+        if (!g || g.claims?.[i] || g.winner) return undefined;
+        const exclude = [...g.items, ...Object.values(g.backups || {}).flat()].map((it) => it.text);
+        const it = G.rerollItem(g.items[i], { exclude, pool: itemPool });
+        if (!it) return undefined;
+        g.items[i] = it;
+        g.rerolls = { ...g.rerolls, [me.id]: (g.rerolls?.[me.id] || 0) + 1 };
+        return g;
+      });
+      if (!res.ok) toast(res.data?.claims?.[i] ? 'Someone already got that one!' : 'No other items at this level to roll.', 'error');
+    } catch (e) { toast(`Rerolling needs a connection: ${e.message}`, 'error'); }
+  };
+
   const unclaim = async () => {
     const i = open;
     await store.transact('games', game.code, (g) => {
@@ -1158,7 +1188,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         return html`<div class="score versus" key=${pid} style=${`--claim:${playerColor(p)}`}>
           <${Emblem} id=${p?.emblem} size=${34} />
           <span class="nm">${pid === me.id ? 'You' : firstName(p)}${game.winner === pid ? ' 🏆' : ''}</span>
-          <span class="pts">${counts[pid] || 0} ${coop ? 'found' : 'claimed'}</span>
+          <span class="pts">${counts[pid] || 0} ${coop ? 'found' : 'claimed'}${game.rerolls?.[pid] ? ` · 🎲${game.rerolls[pid]}` : ''}</span>
         </div>`;
       })}
     </div>
@@ -1184,6 +1214,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       onFile=${claim} onNoPhoto=${!openClaim ? () => claim(null) : null}
       onRemove=${openClaim?.by === me.id && !over ? unclaim : null} removeLabel=${coop ? 'Unmark square' : 'Undo my claim'}
       onEdit=${isPlayer && !over && !openClaim ? editSquare : null}
+      onReroll=${isPlayer && !over && !openClaim ? reroll : null} rerolls=${game.rerolls?.[me.id] || 0}
       note=${!openClaim && over ? 'Game over.' : !openClaim && !isPlayer ? `Join the game to ${coop ? 'help out' : 'claim squares'}.` : null}
       onClose=${() => setOpen(null)} />`}
   `;

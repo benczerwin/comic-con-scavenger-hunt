@@ -34,6 +34,13 @@ function shuffle(arr) {
 
 const strip = ({ tier, icon, text, cat }) => ({ tier, icon, text, cat });
 
+/** A random item of the same tier as `item`, skipping anything in `exclude` (texts). Null if none left. */
+export function rerollItem(item, { exclude = [], pool = ITEMS }) {
+  const skip = new Set([...exclude, item.text]);
+  const options = pool.filter((it) => it.tier === item.tier && !skip.has(it.text));
+  return options.length ? strip(options[Math.floor(Math.random() * options.length)]) : null;
+}
+
 /** Build a card: n*n squares (center FREE if requested & odd) + backups. */
 export function generateCard({ size, difficulty = 'balanced', freeCenter = false, exclude = [], pool = ITEMS }) {
   const mix = DIFFICULTY[difficulty] || DIFFICULTY.balanced;

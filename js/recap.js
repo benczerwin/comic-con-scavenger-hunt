@@ -183,7 +183,7 @@ export async function renderRecap({ game, boards = [], thumbs, playersById }) {
     for (const { b, s } of scored) {
       rows.push({
         pid: b.playerId,
-        stats: `${plural(s.found, 'find')} · ${plural(s.lines, 'line')}${game.winRule === 'most' ? ` · ${s.points} pts` : ''}`,
+        stats: `${plural(s.found, 'find')} · ${plural(s.lines, 'line')}${game.winRule === 'most' ? ` · ${s.points} pts` : ''}${b.rerolls ? ` · ${plural(b.rerolls, 'reroll')}` : ''}`,
       });
     }
   } else {
@@ -191,7 +191,8 @@ export async function renderRecap({ game, boards = [], thumbs, playersById }) {
     highlight = new Set(!game.coop && winnerId && winnerId !== 'draw' ? G.versusWinLine(game, winnerId) || [] : []);
     cells = game.items.map((item, i) => ({ item, photo: game.claims?.[i]?.photo, found: !!game.claims?.[i], by: game.claims?.[i]?.by }));
     for (const pid of game.players.slice().sort((a, b) => (counts[b] || 0) - (counts[a] || 0))) {
-      rows.push({ pid, stats: `${plural(counts[pid] || 0, 'square')} ${game.coop ? 'found' : 'claimed'}` });
+      const r = game.rerolls?.[pid];
+      rows.push({ pid, stats: `${plural(counts[pid] || 0, 'square')} ${game.coop ? 'found' : 'claimed'}${r ? ` · ${plural(r, 'reroll')}` : ''}` });
     }
   }
   const totalPhotos = Object.keys(thumbs).length;
