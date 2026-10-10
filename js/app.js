@@ -1565,13 +1565,14 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         <h2>${cur.item.text}</h2>
         <small>${CATEGORY_LABELS[cur.item.cat] || ''} · ${G.ENDLESS_POINTS[cur.item.tier] || 1} pt${cur.item.tier === 'e' ? '' : 's'}</small>
       </div>
-      ${myTurn ? html`
+      ${myTurn ? html`<div class="endless-actions">
         <${PhotoButtons} label="Snap it" onFile=${(f) => finish(f).catch((e) => toast(e.message, 'error'))}
           onNoPhoto=${() => finish(null).catch((e) => toast(e.message, 'error'))} />
         <div class="row two">
           <button class="btn small ghost" onClick=${reroll}>🎲 Reroll${game.rerolls?.[me.id] ? ` (${game.rerolls[me.id]} used)` : ''}</button>
           <button class="btn small ghost" onClick=${() => confirm('Skip this one? No points.') && finish(null, true)}>⏭️ Skip</button>
-        </div>`
+        </div>
+      </div>`
       : html`<p class="muted center">Waiting for ${name(cur.for)} to find it…</p>`}
     `}
 
