@@ -1127,14 +1127,21 @@ function useScrollLock() {
 /** Three same-star items to swap in, shown right away. getAlts() draws them; onPick(item) swaps one in. */
 function SwapChoices({ item, getAlts, onPick, rerolls = 0 }) {
   const [alts, setAlts] = useState(getAlts);
-  useEffect(() => setAlts(getAlts()), [item.text]);
+  const picked = useRef(null);
+  // Keep the same list after a swap (minus the one picked); only a different item, e.g. a new deal, gets fresh choices.
+  useEffect(() => { if (item.text !== picked.current) setAlts(getAlts()); }, [item.text]);
+  const choose = (it) => {
+    picked.current = it.text;
+    setAlts((list) => list.filter((x) => x.text !== it.text));
+    onPick(it);
+  };
   return html`<div class="alts">
     <h3>Or swap it for <small>(same stars${rerolls ? ` · ${rerolls} reroll${rerolls === 1 ? '' : 's'} used` : ''})</small></h3>
-    ${alts.length ? alts.map((it) => html`<button class=${`alt-row cat-${it.cat}`} key=${it.text} onClick=${() => onPick(it)}>
+    ${alts.length ? alts.map((it) => html`<button class=${`alt-row cat-${it.cat}`} key=${it.text} onClick=${() => choose(it)}>
       <span class="icon">${it.icon}</span><span class="grow"><b>${it.text}</b><small>${CATEGORY_LABELS[it.cat] || ''}</small></span>
       <span class="stars">${TIER_STARS[it.tier]}</span></button>`)
-      : html`<p class="muted small">No other items with these stars to swap in.</p>`}
-    ${alts.length > 0 && html`<button class="btn small ghost" onClick=${() => setAlts(getAlts())}>🎲 3 others</button>`}
+      : html`<p class="muted small">That's all three. Tap below for a new set.</p>`}
+    <button class="btn small ghost" onClick=${() => setAlts(getAlts())}>🎲 ${alts.length ? '3 others' : 'New set of 3'}</button>
   </div>`;
 }
 
