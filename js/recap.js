@@ -11,7 +11,7 @@ const RED = '#ef3e36';
 const CAT_COLORS = {
   theme: '#ffe066', merch: '#99e9f2', nycc: '#a5d8ff', cosplay: '#ffa8a8', anime: '#fcc2d7',
   games: '#b2f2bb', hot: '#ffc078', action: '#d0bfff', free: '#ffd23f', empty: '#f1ece0',
-  chars: '#ffa8a8', themes: '#d0bfff', desc: '#ffe066', items: '#99e9f2',
+  chars: '#ffa8a8', themes: '#d0bfff', desc: '#ffc078', items: '#99e9f2',
 };
 const DISPLAY = "'Bangers', Impact, sans-serif";
 const BODY = "'Nunito', system-ui, sans-serif";

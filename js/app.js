@@ -461,12 +461,10 @@ function RerollToggle({ swaps, setSwaps }) {
 
 /** Pick any number of categories. Callers block starting/dealing while none are picked. */
 function CatPicker({ value, onChange }) {
-  const all = value.length === ALL_CATS.length;
   const toggle = (c) => onChange(value.includes(c) ? value.filter((x) => x !== c) : ALL_CATS.filter((x) => x === c || value.includes(x)));
   return html`<div class="cat-picker">
     ${ALL_CATS.map((c) => html`<button class=${`cat-opt cat-${c}${value.includes(c) ? ' sel' : ''}`} key=${c} onClick=${() => toggle(c)} aria-pressed=${value.includes(c)}>
       <span class="dot"></span>${CATEGORY_LABELS[c]}</button>`)}
-    <button class="pill cat-all" onClick=${() => onChange(all ? [] : ALL_CATS)}>${all ? 'Clear all' : 'Select all'}</button>
   </div>`;
 }
 

@@ -254,7 +254,7 @@ a { color: inherit; }
 .cat-merch { --tile: var(--c-merch); }
 .cat-chars { --tile: var(--c-cosplay); }
 .cat-themes { --tile: var(--c-action); }
-.cat-desc { --tile: var(--c-theme); }
+.cat-desc { --tile: var(--c-hot); }
 .cat-items { --tile: var(--c-merch); }
 .cat-free { --tile: var(--c-free); }
 .tile.tier-free .txt { font-family: var(--display); font-size: calc(min(680px, 100vw) / var(--n) * 0.16); letter-spacing: 1px; }
@@ -629,11 +629,10 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .cat-picker { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
 .cat-opt {
   display: flex; align-items: center; gap: var(--s2); text-align: left; font: inherit; font-weight: 800; font-size: 0.9rem;
-  border: 2px solid var(--ink); border-radius: 12px; background: #fff; padding: var(--s2) var(--s3); cursor: pointer; line-height: 1.15;
+  border: 2px solid var(--ink); border-radius: 12px; background: #fff; padding: var(--s3); cursor: pointer; line-height: 1.15; min-height: 48px;
 }
 .cat-opt .dot { width: 14px; height: 14px; flex: none; border-radius: 50%; border: 2px solid var(--ink); background: var(--tile); }
 .cat-opt:not(.sel) { color: var(--muted); }
 .cat-opt:not(.sel) .dot { background: #fff; }
 .cat-opt.sel { background: var(--yellow); box-shadow: 3px 3px 0 var(--ink); }
-.cat-all { grid-column: 1 / -1; justify-self: start; }
 .filter-row .pill .dot { display: inline-block; width: 10px; height: 10px; vertical-align: middle; }
