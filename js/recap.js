@@ -162,7 +162,7 @@ export async function renderRecap({ game, boards = [], thumbs, playersById, feat
   const isEndless = game.mode === 'endless';
   // Endless has no board: lay the latest finds (up to 49) out as a grid.
   const finds = isEndless ? (game.history || []).filter(G.isFind).slice(-49) : [];
-  const n = isEndless ? Math.min(7, Math.max(2, Math.ceil(Math.sqrt(finds.length || 1)))) : game.size;
+  const n = isEndless ? Math.min(7, Math.max(1, Math.ceil(Math.sqrt(finds.length || 1)))) : game.size;
   const emblemCache = {};
   const getEmblem = async (pid) => (emblemCache[pid] ??= await emblemImg(playersById[pid]?.emblem));
   const boardCells = (b) => b.items.map((item, i) => ({ item, photo: b.marks?.[i]?.photo, found: !!b.marks?.[i], by: b.playerId }));
@@ -321,4 +321,176 @@ export async function renderRecap({ game, boards = [], thumbs, playersById, feat
   ctx.fillText(`📸 ${plural(totalPhotos, 'photo')} snapped · ${plural(game.players.length, 'hunter')} · Game ${game.code}`, W / 2, H - 58);
 
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+}
+
+// ───────────────────────── mega collage ─────────────────────────
+
+const MAX_PIXELS = 16_000_000; // iPhone Safari refuses canvases much bigger than ~16.7M pixels
+
+/**
+ * One giant poster for many games: totals, a leaderboard, a wall of every photo, then each
+ * game's own recap poster. games: [{ game, boards, thumbs }] (thumbs: id → thumb doc).
+ * onProgress(done, total) is called as each game's recap is drawn.
+ */
+export async function renderCollage({ games, playersById, onProgress }) {
+  await Promise.all([
+    document.fonts?.load(`100px ${DISPLAY}`), document.fonts?.load(`900 40px ${BODY}`), document.fonts?.load(`700 30px ${BODY}`),
+  ].filter(Boolean)).catch(() => {});
+  const CW = 2160, P = 72, inner = CW - P * 2;
+  const plural = (k, word) => `${k} ${word}${k === 1 ? '' : 's'}`;
+
+  // ── each game's recap, as an image
+  const recaps = [];
+  for (let k = 0; k < games.length; k++) {
+    const { game, boards, thumbs } = games[k];
+    const blob = await renderRecap({ game, boards, thumbs, playersById });
+    const url = URL.createObjectURL(blob);
+    recaps.push({ img: await loadImg(url), url });
+    onProgress?.(k + 1, games.length);
+  }
+
+  // ── numbers
+  const allGames = games.map((g) => g.game);
+  const allBoards = games.flatMap((g) => g.boards || []);
+  const stats = G.playerStats(allGames, allBoards);
+  const pids = Object.keys(stats).filter((pid) => playersById[pid])
+    .sort((a, b) => stats[b].wins - stats[a].wins || stats[b].found - stats[a].found);
+  const sum = (key) => pids.reduce((t, pid) => t + stats[pid][key], 0);
+  const photos = games.flatMap((g) => Object.values(g.thumbs)).sort((a, b) => (a.at || 0) - (b.at || 0));
+  const hard = pids.reduce((t, pid) => t + stats[pid].tiers.h, 0);
+  const times = allGames.map((g) => g.createdAt).filter(Boolean);
+  const fmt = (t) => new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+  const span = times.length ? (fmt(Math.min(...times)) === fmt(Math.max(...times)) ? fmt(times[0]) : `${fmt(Math.min(...times))} – ${fmt(Math.max(...times))}`) : '';
+  const mvp = pids[0];
+
+  // ── layout (heights first, so the canvas can be sized and scaled to fit)
+  const H_TITLE = 420, H_MVP = mvp ? 300 : 0, H_TILES = 300;
+  const ROW = 120, H_BOARD = 120 + pids.length * ROW;
+  const cols = 10, gap = 12, cell = (inner - gap * (cols - 1)) / cols;
+  const wallRows = Math.ceil(photos.length / cols);
+  const H_WALL = photos.length ? 110 + wallRows * (cell + gap) : 0;
+  const colGap = 48, colW = (inner - colGap) / 2;
+  const colH = [0, 0];
+  const placed = recaps.map(({ img }) => {
+    const h = img ? (img.height * colW) / img.width : 0;
+    const c = colH[0] <= colH[1] ? 0 : 1;
+    const y = colH[c];
+    colH[c] += h + colGap;
+    return { c, y, h };
+  });
+  const H_GAMES = 110 + Math.max(...colH, 0);
+  const H_FOOT = 140;
+  const H = H_TITLE + H_MVP + H_TILES + 60 + H_BOARD + 60 + H_WALL + (H_WALL ? 40 : 0) + H_GAMES + H_FOOT;
+  const scale = Math.min(1, Math.sqrt(MAX_PIXELS / (CW * H)));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(CW * scale); canvas.height = Math.round(H * scale);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+  ctx.fillStyle = PAPER; ctx.fillRect(0, 0, CW, H);
+  halftone(ctx, 0, 0, CW, H, 'rgba(239,62,54,0.10)', 22, 2.6);
+
+  // title
+  comicText(ctx, 'NYCC PHOTO HUNT', CW / 2, 190, 190, RED);
+  comicText(ctx, 'THE MEGA RECAP', CW / 2, 300, 96, YELLOW);
+  ctx.font = `900 44px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'center';
+  ctx.fillText(`${plural(games.length, 'game')}${span ? ` · ${span}` : ''}`, CW / 2, 380);
+  let y = H_TITLE;
+
+  // MVP
+  if (mvp) {
+    const h = H_MVP - 50;
+    panel(ctx, P, y, inner, h, YELLOW);
+    ctx.save(); roundRect(ctx, P, y, inner, h, 22); ctx.clip();
+    const bx = P + inner / 2, by = y + h / 2;
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    for (let a = 0; a < 32; a += 2) {
+      const a0 = (a / 32) * Math.PI * 2, a1 = ((a + 1) / 32) * Math.PI * 2;
+      ctx.beginPath(); ctx.moveTo(bx, by);
+      ctx.lineTo(bx + Math.cos(a0) * 1600, by + Math.sin(a0) * 1600);
+      ctx.lineTo(bx + Math.cos(a1) * 1600, by + Math.sin(a1) * 1600);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+    ctx.lineWidth = 6; ctx.strokeStyle = INK; roundRect(ctx, P, y, inner, h, 22); ctx.stroke();
+    const em = await emblemImg(playersById[mvp]?.emblem);
+    if (em) ctx.drawImage(em, P + 50, by - 90, 180, 180);
+    ctx.font = '120px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('🏆', P + inner - 130, by + 6); ctx.textBaseline = 'alphabetic';
+    comicText(ctx, `MVP: ${firstName(playersById[mvp]).toUpperCase()}`, bx, by + 20, 120, RED);
+    ctx.font = `900 36px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'center';
+    ctx.fillText(`${plural(stats[mvp].wins, 'win')} · ${plural(stats[mvp].found, 'find')} · ${plural(stats[mvp].photos, 'photo')}`, bx, by + 82);
+    y += H_MVP;
+  }
+
+  // stat tiles
+  const tiles = [['Games', games.length], ['Finds', sum('found')], ['Photos', photos.length], ['★★★ finds', hard], ['Hunters', pids.length]];
+  const tGap = 28, tW = (inner - tGap * (tiles.length - 1)) / tiles.length, tH = H_TILES - 50;
+  tiles.forEach(([label, n], i) => {
+    const x = P + i * (tW + tGap);
+    panel(ctx, x, y, tW, tH, '#ffffff', 20);
+    comicText(ctx, String(n), x + tW / 2, y + 150, 120, i % 2 ? '#7fb2ff' : YELLOW);
+    ctx.font = `900 34px ${BODY}`; ctx.fillStyle = '#6b6255'; ctx.textAlign = 'center';
+    ctx.fillText(label, x + tW / 2, y + tH - 34);
+  });
+  y += H_TILES + 60;
+
+  // leaderboard
+  panel(ctx, P, y, inner, H_BOARD - 20, '#ffffff');
+  ctx.font = `900 46px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'left';
+  ctx.fillText('LEADERBOARD', P + 36, y + 70);
+  let ry = y + 96;
+  for (let k = 0; k < pids.length; k++) {
+    const pid = pids[k], s = stats[pid];
+    ctx.font = `64px ${DISPLAY}`; ctx.fillStyle = k === 0 ? RED : INK; ctx.textAlign = 'left';
+    ctx.fillText(`${k + 1}`, P + 40, ry + 80);
+    const em = await emblemImg(playersById[pid]?.emblem);
+    if (em) ctx.drawImage(em, P + 110, ry + 14, 92, 92);
+    ctx.font = `900 52px ${BODY}`; ctx.fillStyle = INK;
+    ctx.fillText(playersById[pid]?.name || 'Someone', P + 228, ry + 78);
+    ctx.font = `800 36px ${BODY}`; ctx.fillStyle = '#6b6255'; ctx.textAlign = 'right';
+    ctx.fillText(`${plural(s.wins, 'win')} · ${plural(s.found, 'find')} · ${plural(s.photos, 'photo')} · ${s.tiers.h} ★★★`, P + inner - 40, ry + 76);
+    if (k < pids.length - 1) {
+      ctx.strokeStyle = '#e5ddcc'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(P + 36, ry + ROW); ctx.lineTo(P + inner - 36, ry + ROW); ctx.stroke();
+    }
+    ry += ROW;
+  }
+  y += H_BOARD + 60;
+
+  // photo wall
+  if (photos.length) {
+    comicText(ctx, `THE PHOTO WALL · ${photos.length}`, P, y + 70, 78, YELLOW, 'left');
+    y += 110;
+    for (let i = 0; i < photos.length; i++) {
+      const img = await loadImg(photos[i].thumb);
+      const x = P + (i % cols) * (cell + gap), yy = y + Math.floor(i / cols) * (cell + gap);
+      ctx.fillStyle = INK; roundRect(ctx, x, yy, cell, cell, 12); ctx.fill();
+      if (img) {
+        ctx.save(); roundRect(ctx, x + 4, yy + 4, cell - 8, cell - 8, 9); ctx.clip();
+        ctx.drawImage(img, x + 4, yy + 4, cell - 8, cell - 8); ctx.restore();
+      }
+    }
+    y += wallRows * (cell + gap) + 40;
+  }
+
+  // every game's recap
+  comicText(ctx, 'EVERY GAME', P, y + 70, 78, YELLOW, 'left');
+  y += 110;
+  recaps.forEach(({ img }, i) => {
+    if (!img) return;
+    const { c, y: oy, h } = placed[i];
+    const x = P + c * (colW + colGap);
+    ctx.fillStyle = INK; roundRect(ctx, x + 10, y + oy + 10, colW, h, 20); ctx.fill();
+    ctx.save(); roundRect(ctx, x, y + oy, colW, h, 20); ctx.clip();
+    ctx.drawImage(img, x, y + oy, colW, h); ctx.restore();
+    ctx.lineWidth = 6; ctx.strokeStyle = INK; roundRect(ctx, x, y + oy, colW, h, 20); ctx.stroke();
+  });
+  recaps.forEach((r) => URL.revokeObjectURL(r.url));
+
+  // footer
+  ctx.font = `900 40px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'center';
+  ctx.fillText(`📸 ${plural(photos.length, 'photo')} · ${plural(sum('found'), 'find')} · ${plural(games.length, 'game')} · NYCC Photo Hunt`, CW / 2, H - 60);
+
+  return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
 }

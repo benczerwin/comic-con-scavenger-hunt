@@ -4,7 +4,7 @@ import { EMBLEMS, emblemById, emblemSVG } from './data/emblems.js';
 import { CATEGORY_LABELS, ITEMS, itemKind } from './data/items.js';
 import * as G from './game.js';
 import { processPhoto } from './photo.js';
-import { renderRecap } from './recap.js';
+import { renderRecap, renderCollage } from './recap.js';
 
 // ───────────────────────── helpers & hooks ─────────────────────────
 
@@ -333,6 +333,12 @@ function Home({ me, playersById }) {
           ${allGames ? 'Show fewer' : `Show all ${sorted.length} games`}</button>`}
       </section>
 
+      <a class="panel items-link" href="#/collage">
+        <span class="icon">🧩</span>
+        <span class="grow"><b>Mega collage</b><small>Pick any games and turn them into one giant poster</small></span>
+        <span>›</span>
+      </a>
+
       <a class="panel items-link" href="#/stats">
         <span class="icon">📊</span>
         <span class="grow"><b>Player stats</b><small>Wins, finds, rare spots & everyone's photos</small></span>
@@ -478,6 +484,84 @@ function NewGame({ mode, me, players }) {
       <p class="muted small center">Drawing from <b>${pool.length}</b> hunt items${mix === 'all' ? '' : ` (${MIXES[mix].short.toLowerCase()})`} · <a href="#/items">edit list</a></p>
       ${tooFew && html`<div class="banner warn">Not enough items turned on${isEndless ? '' : ` for a ${size}×${size} board`}. Turn more on in the item list${mix !== 'all' ? ' or pick Everything' : ''}.</div>`}
       <button class="btn primary huge" disabled=${busy || tooFew} onClick=${create}>${busy ? 'Creating…' : 'Start the hunt!'}</button>
+    </main>`;
+}
+
+// ───────────────────────── mega collage ─────────────────────────
+
+function CollageScreen({ me, playersById }) {
+  const games = useWatch((cb) => store.watchAll('games', cb), []);
+  const [picked, setPicked] = useState(() => new Set());
+  const [onlyMine, setOnlyMine] = useState(true);
+  const [recap, setRecap] = useState(null);
+
+  const list = (games || []).filter((g) => !onlyMine || g.players?.includes(me.id))
+    .sort((a, b) => b.createdAt - a.createdAt);
+  const toggle = (code) => setPicked((s) => { const n = new Set(s); n.has(code) ? n.delete(code) : n.add(code); return n; });
+  const allOn = list.length > 0 && list.every((g) => picked.has(g.code));
+  const setAll = () => setPicked(allOn ? new Set() : new Set(list.map((g) => g.code)));
+  const chosen = list.filter((g) => picked.has(g.code)).sort((a, b) => a.createdAt - b.createdAt);
+
+  const make = async () => {
+    setRecap({ progress: 'Gathering photos…' });
+    try {
+      const data = await Promise.all(chosen.map(async (game) => {
+        const [boards, thumbList] = await Promise.all([
+          game.mode === 'bingo' ? store.getWhere('boards', 'gameId', '==', game.code) : [],
+          store.getWhere('thumbs', 'gameId', '==', game.code),
+        ]);
+        return { game, boards, thumbs: Object.fromEntries(thumbList.map((t) => [t.id, t])) };
+      }));
+      const blob = await renderCollage({
+        games: data, playersById,
+        onProgress: (k, n) => setRecap({ progress: `Drawing game ${k} of ${n}…` }),
+      });
+      setRecap({ blob, url: URL.createObjectURL(blob) });
+    } catch (e) {
+      setRecap(null);
+      toast(`Couldn't make the collage: ${e.message}`, 'error');
+    }
+  };
+  const close = () => { if (recap?.url) URL.revokeObjectURL(recap.url); setRecap(null); };
+
+  const detail = (g) => g.mode === 'endless' ? `${findCount(g)} find${findCount(g) === 1 ? '' : 's'}`
+    : `${g.size}×${g.size} · ${g.mode === 'bingo' ? G.WIN_RULES[g.winRule]?.label : g.coop ? 'Team blackout' : `${g.connect} in a row`}`;
+
+  return html`
+    <main class="screen">
+      <nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>
+      <h1 class="title">Mega collage</h1>
+      <p class="muted">Pick as many games as you like. You'll get one giant poster with the totals, a leaderboard, every photo and every game's recap.</p>
+
+      <section class="panel">
+        <div class="row">
+          <span class="grow nowrap"><b>${picked.size}</b> selected</span>
+          <button class=${'pill' + (onlyMine ? ' sel' : '')} onClick=${() => setOnlyMine(!onlyMine)}>Only my games</button>
+          <button class="pill" onClick=${setAll} disabled=${!list.length}>${allOn ? 'Select none' : 'Select all'}</button>
+        </div>
+      </section>
+
+      ${games === undefined ? html`<p class="muted center">Loading games…</p>`
+        : !list.length ? html`<div class="panel center muted">No games yet.</div>`
+        : html`<div class="game-list collage-list">
+          ${list.map((g) => {
+            const on = picked.has(g.code);
+            return html`<button class=${'game-row pick-row' + (on ? ' sel' : '')} key=${g.code} onClick=${() => toggle(g.code)}>
+              <span class="check-box">${on ? '✓' : ''}</span>
+              <span class="tag ${g.mode}">${modeTag(g)}</span>
+              <span class="grow"><b>${g.code}</b>
+                <small>${detail(g)}${g.winner && playersById[g.winner] ? ` · 🏆 ${playersById[g.winner].name}` : ''}</small>
+                <small>${new Date(g.createdAt).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</small></span>
+              <span class="stack">${g.players.slice(0, 4).map((pid) => html`<${Emblem} id=${playersById[pid]?.emblem} size=${24} />`)}</span>
+            </button>`;
+          })}
+        </div>`}
+
+      <div class="collage-go">
+        <button class="btn primary huge" disabled=${!chosen.length} onClick=${make}>
+          🧩 Make collage${chosen.length ? ` (${chosen.length})` : ''}</button>
+      </div>
+      ${recap && html`<${RecapModal} recap=${recap} code="collage" title="Mega collage" playersById=${playersById} onClose=${close} />`}
     </main>`;
 }
 
@@ -1017,8 +1101,9 @@ function WinBanner({ text, sub, onRematch }) {
   </div>`;
 }
 
-function RecapModal({ recap, code, playersById, onFeature, onClose }) {
-  const file = recap.blob && new File([recap.blob], `nycc-hunt-${code}.png`, { type: 'image/png' });
+function RecapModal({ recap, code, playersById, onFeature, onClose, title = 'Game recap' }) {
+  const ext = recap.blob?.type === 'image/jpeg' ? 'jpg' : 'png';
+  const file = recap.blob && new File([recap.blob], `nycc-hunt-${code}.${ext}`, { type: recap.blob.type || 'image/png' });
   const canShare = file && navigator.canShare?.({ files: [file] });
   const share = async () => {
     try { await navigator.share({ files: [file], title: 'NYCC Photo Hunt' }); } catch {}
@@ -1028,7 +1113,7 @@ function RecapModal({ recap, code, playersById, onFeature, onClose }) {
       <div class="modal recap">
         <div class="recap-head">
         <button class="x" onClick=${onClose} aria-label="Close">×</button>
-        <h2 class="recap-title">Game recap</h2>
+        <h2 class="recap-title">${title}</h2>
         ${recap.boards?.length > 1 && html`<div class="recap-pick">
           <span class="muted small">Feature:</span>
           ${recap.boards.map((b) => html`<button key=${b.playerId}
@@ -1042,8 +1127,8 @@ function RecapModal({ recap, code, playersById, onFeature, onClose }) {
           <img class="recap-img" src=${recap.url} alt="Game recap" />
           <p class="muted small center">Tip: press and hold the image to save it to Photos.</p>
           ${canShare && html`<button class="btn primary huge" onClick=${share}>📤 Save or share</button>`}
-          <a class="btn ghost" href=${recap.url} download=${`nycc-hunt-${code}.png`}>⬇️ Download</a>
-        ` : html`<div class="recap-loading"><div class="spinner"></div>Drawing your comic…</div>`}
+          <a class="btn ghost" href=${recap.url} download=${`nycc-hunt-${code}.${ext}`}>⬇️ Download</a>
+        ` : html`<div class="recap-loading"><div class="spinner"></div>${recap.progress || 'Drawing your comic…'}</div>`}
       </div>
     </div>`;
 }
@@ -1701,6 +1786,7 @@ function App() {
   let body;
   if (players === undefined) body = html`<main class="screen"><p class="muted center">Loading…</p></main>`;
   else if (!me || route[0] === 'profile') body = html`<${ProfileScreen} players=${players} me=${me} onPick=${pick} onSwitch=${switchPlayer} />`;
+  else if (route[0] === 'collage') body = html`<${CollageScreen} me=${me} playersById=${playersById} />`;
   else if (route[0] === 'stats') body = html`<${StatsScreen} me=${me} players=${players} playersById=${playersById} focus=${route[1]} key=${route[1] || 'all'} />`;
   else if (route[0] === 'items') body = html`<${ItemsScreen} bank=${bank} />`;
   else if (route[0] === 'new') body = html`<${NewGame} mode=${['versus', 'endless'].includes(route[1]) ? route[1] : 'bingo'} me=${me} players=${players} key=${route[1]} />`;

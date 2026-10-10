@@ -53,6 +53,7 @@ a { color: inherit; }
 .row { display: flex; gap: var(--s3); align-items: center; }
 .row.end { justify-content: flex-end; margin-top: var(--s4); }
 .grow { flex: 1; min-width: 0; }
+.nowrap { white-space: nowrap; }
 
 .title {
   font-family: var(--display);
@@ -519,3 +520,12 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .slot-actions { margin-top: var(--s3); }
 .slot-actions .btn { padding: 10px 14px; white-space: nowrap; }
 .slot-actions .btn.primary { flex: 1; font-family: var(--display); font-size: 1.2rem; letter-spacing: 1px; }
+
+/* mega collage */
+.pick-row { width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.pick-row.sel { background: var(--yellow); box-shadow: 3px 3px 0 var(--ink); }
+.check-box { width: 26px; height: 26px; flex: none; border: 2px solid var(--ink); border-radius: 8px; background: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 900; }
+.collage-list { margin-bottom: var(--s5); }
+.collage-go { position: sticky; bottom: calc(var(--s3) + env(safe-area-inset-bottom)); z-index: 5; }
+.pill:disabled { opacity: 0.5; }
