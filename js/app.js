@@ -310,24 +310,8 @@ function Home({ me, playersById }) {
         ${games === undefined && html`<p class="muted">Loading…</p>`}
         ${games && !sorted.length && html`<p class="muted">No games yet. Start one above!</p>`}
         <div class="game-list">
-          ${shown.map((g) => {
-            const winner = g.winner && playersById[g.winner];
-            const result = winner ? ` · 🏆 ${winner.name}` : g.winner === 'draw' ? ' · Draw' : g.winner === 'team' ? ' · 🎉 Blacked out' : '';
-            return html`
-              <div class="game-row-wrap" key=${g.code}>
-              <a class="game-row" href="#/g/${g.code}">
-                <span class="tag ${g.mode}">${modeTag(g)}</span>
-                <span class="grow">
-                  <b>${g.code}</b>
-                  <small>${g.mode === 'endless' ? `${findCount(g)} find${findCount(g) === 1 ? '' : 's'}`
-                    : `${g.size}×${g.size} · ${g.mode === 'bingo' ? G.WIN_RULES[g.winRule]?.label : g.coop ? 'Team blackout' : `${g.connect} in a row`}`}${result}</small>
-                  <small>${new Date(g.createdAt).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</small>
-                </span>
-                <span class="stack">${g.players.slice(0, 5).map((pid) => html`<${Emblem} id=${playersById[pid]?.emblem} size=${26} />`)}</span>
-              </a>
-              <button class="del" aria-label="Delete game ${g.code}" onClick=${() => confirmDelete(g.code)}>🗑️</button>
-              </div>`;
-          })}
+          ${shown.map((g) => html`<${GameRow} key=${g.code} g=${g} playersById=${playersById} href=${`#/g/${g.code}`}
+            onDelete=${() => confirmDelete(g.code)} />`)}
         </div>
         ${sorted.length > 3 && html`<button class="btn small ghost more-games" onClick=${() => setAllGames(!allGames)}>
           ${allGames ? 'Show fewer' : `Show all ${sorted.length} games`}</button>`}
@@ -487,6 +471,34 @@ function NewGame({ mode, me, players }) {
     </main>`;
 }
 
+// ───────────────────────── game rows ─────────────────────────
+
+const TRASH_SVG = html`<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2"
+  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg>`;
+
+const gameDetail = (g) => g.mode === 'endless' ? `${findCount(g)} find${findCount(g) === 1 ? '' : 's'}`
+  : `${g.size}×${g.size} · ${g.mode === 'bingo' ? G.WIN_RULES[g.winRule]?.label : g.coop ? 'Team blackout' : `${g.connect} in a row`}`;
+const gameResult = (g, playersById) => {
+  const w = g.winner && playersById[g.winner];
+  return w ? `🏆 ${w.name}` : g.winner === 'draw' ? '🤝 Draw' : g.winner === 'team' ? '🎉 Blacked out' : 'In progress';
+};
+
+/** One game in a list. Pass href to make it a link, onClick/selected for picking, onDelete for a trash button. */
+function GameRow({ g, playersById, href, onClick, selected, onDelete }) {
+  const body = html`
+    ${selected !== undefined && html`<span class="check-box">${selected ? '✓' : ''}</span>`}
+    <span class="grow">
+      <span class="gr-top"><b>${g.code}</b><span class="mode-label ${g.mode}">${modeTag(g)}</span></span>
+      <small>${gameDetail(g)}</small>
+      <small>${new Date(g.createdAt).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · ${gameResult(g, playersById)}</small>
+    </span>
+    <span class="stack">${g.players.slice(0, 4).map((pid) => html`<${Emblem} id=${playersById[pid]?.emblem} size=${28} />`)}</span>`;
+  return html`<div class=${`game-card mode-${g.mode}${g.coop ? ' coop' : ''}${selected ? ' sel' : ''}`}>
+    ${href ? html`<a class="game-main" href=${href}>${body}</a>` : html`<button class="game-main" onClick=${onClick}>${body}</button>`}
+    ${onDelete && html`<button class="icon-btn" aria-label=${`Delete game ${g.code}`} onClick=${onDelete}>${TRASH_SVG}</button>`}
+  </div>`;
+}
+
 // ───────────────────────── mega collage ─────────────────────────
 
 function CollageScreen({ me, playersById }) {
@@ -524,9 +536,6 @@ function CollageScreen({ me, playersById }) {
   };
   const close = () => { if (recap?.url) URL.revokeObjectURL(recap.url); setRecap(null); };
 
-  const detail = (g) => g.mode === 'endless' ? `${findCount(g)} find${findCount(g) === 1 ? '' : 's'}`
-    : `${g.size}×${g.size} · ${g.mode === 'bingo' ? G.WIN_RULES[g.winRule]?.label : g.coop ? 'Team blackout' : `${g.connect} in a row`}`;
-
   return html`
     <main class="screen">
       <nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>
@@ -544,17 +553,8 @@ function CollageScreen({ me, playersById }) {
       ${games === undefined ? html`<p class="muted center">Loading games…</p>`
         : !list.length ? html`<div class="panel center muted">No games yet.</div>`
         : html`<div class="game-list collage-list">
-          ${list.map((g) => {
-            const on = picked.has(g.code);
-            return html`<button class=${'game-row pick-row' + (on ? ' sel' : '')} key=${g.code} onClick=${() => toggle(g.code)}>
-              <span class="check-box">${on ? '✓' : ''}</span>
-              <span class="tag ${g.mode}">${modeTag(g)}</span>
-              <span class="grow"><b>${g.code}</b>
-                <small>${detail(g)}${g.winner && playersById[g.winner] ? ` · 🏆 ${playersById[g.winner].name}` : ''}</small>
-                <small>${new Date(g.createdAt).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</small></span>
-              <span class="stack">${g.players.slice(0, 4).map((pid) => html`<${Emblem} id=${playersById[pid]?.emblem} size=${24} />`)}</span>
-            </button>`;
-          })}
+          ${list.map((g) => html`<${GameRow} key=${g.code} g=${g} playersById=${playersById}
+            selected=${picked.has(g.code)} onClick=${() => toggle(g.code)} />`)}
         </div>`}
 
       <div class="collage-go">
@@ -635,8 +635,6 @@ function PlayerStats({ p, s, me, playersById }) {
     <div class="panel center muted">${p.name} hasn't played yet.</div></main>`;
   const cats = Object.entries(s.cats).sort((a, b) => b[1] - a[1]);
   const maxCat = cats[0]?.[1] || 1;
-  const result = (g) => g.winner === p.id ? '🏆 Won' : g.winner === 'team' ? '🎉 Team blackout'
-    : g.winner === 'draw' ? '🤝 Draw' : g.winner ? `Lost to ${firstName(playersById[g.winner])}` : 'In progress';
   const photos = (thumbs || []).slice().sort((a, b) => (b.at || 0) - (a.at || 0));
   return html`
     <main class="screen">
@@ -677,11 +675,7 @@ function PlayerStats({ p, s, me, playersById }) {
       <section class="panel">
         <h2>Games</h2>
         <div class="game-list">
-          ${s.recent.map((g) => html`<a class="game-row" href="#/g/${g.code}" key=${g.code}>
-            <span class="tag ${g.mode}">${modeTag(g)}</span>
-            <span class="grow"><b>${g.code}</b> · ${g.mode === 'endless' ? 'Endless' : `${g.size}×${g.size}`}
-              <small>${new Date(g.createdAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} · ${result(g)}</small></span>
-          </a>`)}
+          ${s.recent.map((g) => html`<${GameRow} key=${g.code} g=${g} playersById=${playersById} href=${`#/g/${g.code}`} />`)}
         </div>
       </section>
 
