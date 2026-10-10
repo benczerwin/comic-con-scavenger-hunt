@@ -575,13 +575,19 @@ function BackupTray({ backups, swapIdx, setSwapIdx, canUse }) {
 }
 
 const FACING_KEY = 'nycc-hunt:facing';
+const WIDE_KEY = 'nycc-hunt:wide';
 const hasLiveCamera = !!navigator.mediaDevices?.getUserMedia;
+const loadPref = (key, dflt) => { try { return localStorage.getItem(key) ?? dflt; } catch { return dflt; } };
+const savePref = (key, val) => { try { localStorage.setItem(key, val); } catch {} };
 
-/** Full-screen in-app camera (getUserMedia). Never fires the flash; front camera by default. */
+/** Full-screen in-app camera (getUserMedia). Never fires the flash; front camera by default.
+ *  "Wide" asks for the camera's full-sensor 4:3 format and its widest zoom, and the preview
+ *  shows the whole frame (no cropping) so what you see is what you get. */
 function CameraView({ onFile, onClose, onFallback }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
-  const [facing, setFacing] = useState(() => { try { return localStorage.getItem(FACING_KEY) || 'user'; } catch { return 'user'; } });
+  const [facing, setFacing] = useState(() => loadPref(FACING_KEY, 'user'));
+  const [wide, setWide] = useState(() => loadPref(WIDE_KEY, '1') === '1');
   const [shot, setShot] = useState(null); // { url, blob }
   const [error, setError] = useState(null);
   const [ready, setReady] = useState(false);
@@ -592,12 +598,17 @@ function CameraView({ onFile, onClose, onFallback }) {
     let cancelled = false;
     setReady(false);
     stop();
-    navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1920 } },
-    }).then((stream) => {
+    // Sizes are in the sensor's landscape orientation; the browser rotates frames to match the phone.
+    // 4:3 is the full sensor; 16:9 crops the top and bottom off.
+    const size = wide ? { width: { ideal: 4032 }, height: { ideal: 3024 } } : { width: { ideal: 1920 }, height: { ideal: 1080 } };
+    navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: facing, ...size } }).then(async (stream) => {
       if (cancelled) return stream.getTracks().forEach((t) => t.stop());
       streamRef.current = stream;
+      const track = stream.getVideoTracks()[0];
+      const zoom = track?.getCapabilities?.().zoom;
+      if (zoom && zoom.min < zoom.max) {
+        await track.applyConstraints({ advanced: [{ zoom: wide ? zoom.min : Math.max(zoom.min, Math.min(1, zoom.max)) }] }).catch(() => {});
+      }
       const v = videoRef.current;
       v.srcObject = stream;
       v.play().catch(() => {});
@@ -606,17 +617,20 @@ function CameraView({ onFile, onClose, onFallback }) {
         ? 'Camera access was blocked. Allow it in your browser settings, or use the phone camera instead.'
         : "Couldn't start the camera on this device.");
     });
-    try { localStorage.setItem(FACING_KEY, facing); } catch {}
+    savePref(FACING_KEY, facing);
+    savePref(WIDE_KEY, wide ? '1' : '0');
     return () => { cancelled = true; };
-  }, [facing]);
+  }, [facing, wide]);
   useEffect(() => () => { stop(); if (shot?.url) URL.revokeObjectURL(shot.url); }, []);
 
   const snap = () => {
     const v = videoRef.current;
     if (!v?.videoWidth) return;
+    // Uploads are shrunk to 1280px anyway; capping here keeps big full-sensor frames fast.
+    const scale = Math.min(1, 2048 / Math.max(v.videoWidth, v.videoHeight));
     const c = document.createElement('canvas');
-    c.width = v.videoWidth; c.height = v.videoHeight;
-    c.getContext('2d').drawImage(v, 0, 0);
+    c.width = Math.round(v.videoWidth * scale); c.height = Math.round(v.videoHeight * scale);
+    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
     c.toBlob((blob) => setShot({ blob, url: URL.createObjectURL(blob) }), 'image/jpeg', 0.92);
   };
   const retake = () => { URL.revokeObjectURL(shot.url); setShot(null); };
@@ -638,6 +652,8 @@ function CameraView({ onFile, onClose, onFallback }) {
         <button class="btn primary" onClick=${() => { stop(); onClose(); onFallback(); }}>📱 Use phone camera</button>
       </div>`}
       <button class="cam-btn cam-close" onClick=${() => { stop(); onClose(); }} aria-label="Close camera">✕</button>
+      ${!shot && !error && html`<button class=${'cam-pill cam-wide' + (wide ? ' on' : '')} onClick=${() => setWide(!wide)}
+        aria-pressed=${wide}>${wide ? '⤡ Wide' : '⤢ Normal'}</button>`}
       <div class="camera-bar">
         ${shot ? html`
           <button class="btn ghost" onClick=${retake}>↺ Retake</button>
