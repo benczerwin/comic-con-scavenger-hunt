@@ -211,6 +211,7 @@ function ProfileScreen({ players, me, onPick, onSwitch }) {
 
   return html`
     <main class="screen">
+      ${me && html`<nav class="topbar"><a class="back" href="#/settings">‹ Settings</a></nav>`}
       <h1 class="title">${me ? 'Edit your hero' : 'Who goes there?'}</h1>
       ${!me && others.length > 0 && html`
         <section class="panel">
@@ -247,7 +248,7 @@ function ProfileScreen({ players, me, onPick, onSwitch }) {
             <div class="item-row" key=${p.id}>
               <${Emblem} id=${p.emblem} size=${34} />
               <span class="grow">${p.name}${p.id === me?.id ? ' (you)' : ''}</span>
-              <button class="del" aria-label="Remove ${p.name}" onClick=${() => removePlayer(p)}>🗑️</button>
+              <button class="icon-btn round" aria-label="Remove ${p.name}" onClick=${() => removePlayer(p)}>${TRASH_SVG}</button>
             </div>`)}
           ${me && html`<div class="row end"><button class="btn small ghost" onClick=${onSwitch}>Switch player on this phone</button></div>`}
         </section>`}
@@ -258,8 +259,12 @@ function Home({ me, playersById }) {
   const games = useWatch((cb) => store.watchWhere('games', 'players', 'array-contains', me.id, cb), [me.id]);
   const [code, setCode] = useState('');
   const sorted = (games || []).slice().sort((a, b) => b.createdAt - a.createdAt);
-  const [allGames, setAllGames] = useState(false);
-  const shown = allGames ? sorted : sorted.slice(0, 3);
+  const [day, setDay] = useState('all');
+  const [who, setWho] = useState('all');
+  const dayKey = (t) => new Date(t).toDateString();
+  const days = [...new Set(sorted.map((g) => dayKey(g.createdAt)))];
+  const people = [...new Set(sorted.flatMap((g) => g.players))].filter((pid) => playersById[pid]);
+  const shown = sorted.filter((g) => (day === 'all' || dayKey(g.createdAt) === day) && (who === 'all' || g.players.includes(who)));
 
   const join = (e) => {
     e.preventDefault();
@@ -271,9 +276,13 @@ function Home({ me, playersById }) {
     <main class="screen">
       <header class="hero">
         <div class="logo">NYCC<span>Photo Hunt</span></div>
-        <button class="me" onClick=${() => go('/profile')} title="Edit profile">
-          <${Emblem} id=${me.emblem} size=${44} /><span>${me.name}</span>
-        </button>
+        <div class="hero-actions">
+          <a class="round-btn" href="#/stats" aria-label="Player stats" title="Player stats">${STATS_ICON}</a>
+          <a class="round-btn" href="#/settings" aria-label="Settings" title="Settings">${GEAR_ICON}</a>
+          <button class="me" onClick=${() => go('/profile')} title="Edit profile">
+            <${Emblem} id=${me.emblem} size=${40} /><span>${firstName(me)}</span>
+          </button>
+        </div>
       </header>
       ${!store.isLive && html`<div class="banner warn">
         <b>Demo mode:</b> games only sync on this device. Add your Firebase config to play together live.</div>`}
@@ -306,47 +315,70 @@ function Home({ me, playersById }) {
       </form>
 
       <section class="panel">
-        <h2>Your games</h2>
+        <div class="panel-head">
+          <h2>Your games</h2>
+          <a class="round-btn small" href="#/collage" aria-label="Make a collage" title="Make a collage">${COLLAGE_ICON}</a>
+        </div>
         ${games === undefined && html`<p class="muted">Loading…</p>`}
         ${games && !sorted.length && html`<p class="muted">No games yet. Start one above!</p>`}
+        ${sorted.length > 1 && html`<div class="row game-filters">
+          <select class="text small-select" value=${day} onChange=${(e) => setDay(e.target.value)} aria-label="Filter by date">
+            <option value="all">All dates</option>
+            ${days.map((d) => html`<option value=${d}>${dayLabel(d)}</option>`)}
+          </select>
+          <select class="text small-select" value=${who} onChange=${(e) => setWho(e.target.value)} aria-label="Filter by player">
+            <option value="all">Everyone</option>
+            ${people.map((pid) => html`<option value=${pid}>${pid === me.id ? 'Me' : playersById[pid].name}</option>`)}
+          </select>
+        </div>`}
         <div class="game-list">
           ${shown.map((g) => html`<${GameRow} key=${g.code} g=${g} playersById=${playersById} href=${`#/g/${g.code}`}
             onDelete=${() => confirmDelete(g.code)} />`)}
         </div>
-        ${sorted.length > 3 && html`<button class="btn small ghost more-games" onClick=${() => setAllGames(!allGames)}>
-          ${allGames ? 'Show fewer' : `Show all ${sorted.length} games`}</button>`}
+        ${sorted.length > 0 && !shown.length && html`<p class="muted center">No games match.</p>`}
       </section>
+    </main>`;
+}
 
-      <a class="panel items-link" href="#/collage">
-        <span class="icon">🧩</span>
-        <span class="grow"><b>Mega collage</b><small>Pick any games and turn them into one giant poster</small></span>
-        <span>›</span>
-      </a>
+const dayLabel = (key) => {
+  const d = new Date(key), today = new Date();
+  const yest = new Date(); yest.setDate(today.getDate() - 1);
+  if (key === today.toDateString()) return 'Today';
+  if (key === yest.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+};
 
-      <a class="panel items-link" href="#/stats">
-        <span class="icon">📊</span>
-        <span class="grow"><b>Player stats</b><small>Wins, finds, rare spots & everyone's photos</small></span>
-        <span>›</span>
-      </a>
+function HowToPlay() {
+  return html`<ul class="how-list">
+    <li><b>Solo Series:</b> everyone gets their own board. Tap a square, take a photo, and it's marked. Pick a win rule when you start.</li>
+    <li><b>Crossover:</b> everyone shares one board. Snap a square first to claim it with your emblem and get N in a row to win. Or pick <b>Co-op</b> and black out the board together.</li>
+    <li><b>Endless:</b> 1–3 items are up at a time. Snap one to score (★ = 1 pt, ★★ = 2, ★★★ = 3), then pick the difficulty and type of the next item. An item that sits while 2 others get found swaps itself out.</li>
+    <li><b>Backups:</b> in Solo Series and Crossover you get 1–3 backup items. Tap a backup, then tap an unmarked square to swap it in.</li>
+    <li><b>🎲 Reroll:</b> swap any item for another one with the same stars. Rerolls are counted in the stats.</li>
+    <li><b>Stars:</b> ★ items are everywhere, ★★★ items are rare finds.</li>
+    <li><b>Friends:</b> share the game code or link. Anyone can join mid-game.</li>
+  </ul>`;
+}
 
+function SettingsScreen({ me }) {
+  return html`
+    <main class="screen">
+      <nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>
+      <h1 class="title">Settings</h1>
       <a class="panel items-link" href="#/items">
         <span class="icon">📝</span>
         <span class="grow"><b>Edit hunt items</b><small>${itemPool.length} items on · Turn ideas off or add your own</small></span>
         <span>›</span>
       </a>
-
-      <details class="panel how">
-        <summary>How to play</summary>
-        <ul>
-          <li><b>Solo Series:</b> each player gets their own board. Tap a square → take a photo → it's marked. Choose a win rule when you create the game.</li>
-          <li><b>Endless:</b> 1–3 items active at a time. Snap one to score (★ = 1 pt, ★★ = 2, ★★★ = 3), then pick the difficulty and type of the item that replaces it. An item that sits while 2 others get found swaps itself out. Choose whether anyone can snap (first one gets it) or players take turns. Play as long as you like.</li>
-          <li><b>Crossover:</b> everyone shares one board. Snap it first to claim it with your emblem. Get N-in-a-row to win. Or pick <b>Co-op</b>: work together to black out the whole board.</li>
-          <li><b>Backups:</b> you get 1–3 backup items (based on board size). Tap a backup, then tap any unmarked square to swap it in.</li>
-          <li><b>Easy squares</b> are thematic (tails, wings, horns…). ★★★ squares are the rare finds.</li>
-          <li>Share the game code or link with your crew. Anyone can join mid-game.</li>
-          <li>Don't like an item? Turn it off in <b>Edit hunt items</b>, or tap an unmarked square in a game and choose <b>Edit square</b>.</li>
-        </ul>
-      </details>
+      <a class="panel items-link" href="#/profile">
+        <span class="icon"><${Emblem} id=${me.emblem} size=${36} /></span>
+        <span class="grow"><b>Players</b><small>Edit your hero, switch player or remove players</small></span>
+        <span>›</span>
+      </a>
+      <section class="panel">
+        <h2>How to play</h2>
+        <${HowToPlay} />
+      </section>
     </main>`;
 }
 
@@ -473,6 +505,12 @@ function NewGame({ mode, me, players }) {
 
 // ───────────────────────── game rows ─────────────────────────
 
+const svgIcon = (d, size = 22) => html`<svg viewBox="0 0 24 24" width=${size} height=${size} fill="none" stroke="currentColor"
+  stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d=${d} /></svg>`;
+const STATS_ICON = svgIcon('M4 20V10M10 20V4M16 20v-7M22 20H2');
+const GEAR_ICON = svgIcon('M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z');
+const COLLAGE_ICON = svgIcon('M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z', 20);
+
 const TRASH_SVG = html`<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2"
   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg>`;
 
@@ -490,7 +528,7 @@ function GameRow({ g, playersById, href, onClick, selected, onDelete }) {
     <span class="grow">
       <span class="gr-top"><b>${g.code}</b><span class="mode-label ${g.mode}">${modeTag(g)}</span></span>
       <small>${gameDetail(g)}</small>
-      <small>${new Date(g.createdAt).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · ${gameResult(g, playersById)}</small>
+      <small>${new Date(g.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · ${gameResult(g, playersById)}</small>
     </span>
     <span class="stack">${g.players.slice(0, 4).map((pid) => html`<${Emblem} id=${playersById[pid]?.emblem} size=${28} />`)}</span>`;
   return html`<div class=${`game-card mode-${g.mode}${g.coop ? ' coop' : ''}${selected ? ' sel' : ''}`}>
@@ -809,7 +847,7 @@ function ItemsScreen({ bank }) {
             return html`<div class="item-row ${on ? '' : 'off'}" key=${it.text}>
               <span class="icon">${it.icon}</span>
               <span class="grow">${it.text}${it.custom && html` <i class="badge">mine</i>`}<small class="stars">${TIER_STARS[it.tier]}</small></span>
-              ${it.custom && html`<button class="del" aria-label="Delete item" onClick=${() => removeCustom(it.text)}>🗑️</button>`}
+              ${it.custom && html`<button class="icon-btn round" aria-label="Delete item" onClick=${() => removeCustom(it.text)}>${TRASH_SVG}</button>`}
               <label class="switch"><input type="checkbox" checked=${on} onChange=${() => toggle(it.text)} /><span></span></label>
             </div>`;
           })}
@@ -1780,6 +1818,7 @@ function App() {
   let body;
   if (players === undefined) body = html`<main class="screen"><p class="muted center">Loading…</p></main>`;
   else if (!me || route[0] === 'profile') body = html`<${ProfileScreen} players=${players} me=${me} onPick=${pick} onSwitch=${switchPlayer} />`;
+  else if (route[0] === 'settings') body = html`<${SettingsScreen} me=${me} />`;
   else if (route[0] === 'collage') body = html`<${CollageScreen} me=${me} playersById=${playersById} />`;
   else if (route[0] === 'stats') body = html`<${StatsScreen} me=${me} players=${players} playersById=${playersById} focus=${route[1]} key=${route[1] || 'all'} />`;
   else if (route[0] === 'items') body = html`<${ItemsScreen} bank=${bank} />`;
