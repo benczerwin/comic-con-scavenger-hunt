@@ -211,7 +211,7 @@ function ProfileScreen({ players, me, onPick, onSwitch }) {
 
   return html`
     <main class="screen">
-      ${me && html`<nav class="topbar"><a class="back" href="#/settings">‹ Settings</a></nav>`}
+      ${me && html`<nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>`}
       <h1 class="title">${me ? 'Edit your hero' : 'Who goes there?'}</h1>
       ${!me && others.length > 0 && html`
         <section class="panel">
