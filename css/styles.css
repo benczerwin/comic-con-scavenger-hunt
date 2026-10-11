@@ -418,6 +418,8 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .item-edit:active { opacity: 0.6; }
 .badge.edited { background: #7fb2ff; color: var(--ink); }
 .cat-select .multi-btn { padding: var(--s3) 36px var(--s3) var(--s3); font-size: 1rem; }
+.square-edit { display: flex; flex-direction: column; gap: var(--s2); }
+.also-list { margin-top: 0; }
 .sheet-title { margin: 0; padding-right: 40px; }
 .item-row .icon { font-size: 1.5rem; width: 32px; text-align: center; flex: none; }
 .item-row .stars { display: block; font-size: 0.7rem; color: var(--muted); }

@@ -1290,7 +1290,7 @@ function PlayerStats({ p, s, me, playersById, note }) {
 
 const TIER_LABELS = { e: 'Easy', m: 'Medium', h: 'Hard' };
 
-function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compact, extra }) {
+function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compact, extra, beforeActions }) {
   const [icon, setIcon] = useState(itemIconName(initial?.icon) || 'camera');
   const [picking, setPicking] = useState(false);
   const [mine, setMine] = useState(initial ? initial.mine !== false : true);
@@ -1323,6 +1323,7 @@ function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compa
         options=${Object.entries(CATEGORY_LABELS).map(([k, l]) => ({ value: k, label: l }))} /></div>
       ${!compact && html`<label class="toggle mine-toggle"><input type="checkbox" checked=${mine} onChange=${(e) => setMine(e.target.checked)} />
         <span>Mark as mine <small>(adds it to your list and the Mine filter)</small></span></label>`}
+      ${beforeActions}
       <div class="row end">
         ${extra && html`<span class="form-extra">${extra}</span>`}
         ${onCancel && html`<button type="button" class="btn ghost small" onClick=${onCancel}>Cancel</button>`}
@@ -1383,19 +1384,6 @@ function bankActions(bank) {
   /** The list's current version of an item seen in a game (it may have been renamed since). */
   const find = (item) => all.find((x) => x.text === item.text) || all.find((x) => x.orig === item.text) || null;
   return { all, key, archived, save, saveEdit, setArchived, resetItem, removeCustom, find };
-}
-
-/** Edit sheet for a list item opened from inside a game. Changes the shared list (future games), not this game. */
-function ListItemEditor({ item, onClose }) {
-  const acts = bankActions(currentBank);
-  const it = acts.find(item);
-  if (!it) { toast("That item isn't in the list any more.", 'error'); onClose(); return null; }
-  return html`<${ItemEditSheet} item=${it} archived=${acts.archived.has(acts.key(it))} used=${null}
-    note="Changes the hunt item list for future games."
-    onSave=${(next) => acts.saveEdit(it, next) && onClose()} onClose=${onClose}
-    onArchive=${(on) => { acts.setArchived(it, on); onClose(); }}
-    onReset=${it.orig ? () => { acts.resetItem(it); onClose(); } : null}
-    onDelete=${it.custom ? () => acts.removeCustom(it.text) && onClose() : null} />`;
 }
 
 /** Sheet for changing one item in the list. */
@@ -1927,14 +1915,16 @@ const loadFull = (id) => {
 };
 
 function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel, onFile, onNoPhoto, onRemove, removeLabel, onEdit,
-  onReroll, onBlock, rerolls = 0, onClose, note, onPrev, onNext, position, prefetch, onListEdit }) {
+  onReroll, onBlock, rerolls = 0, onClose, note, onPrev, onNext, position, prefetch, startEditing }) {
   const [full, setFull] = useState(() => fullCache.get(photoId) || null);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(!!startEditing);
+  const [alsoList, setAlsoList] = useState(true);
   const [busy, setBusy] = useState(false);
   useScrollLock();
   const sheet = useSwipeDown(onClose);
   useSwipeSides(sheet, onPrev, onNext);
-  useEffect(() => setEditing(false), [item.text]); // swiping to another entry reuses this sheet
+  const firstItem = useRef(item.text);
+  useEffect(() => { if (item.text !== firstItem.current) setEditing(false); }, [item.text]); // swiping reuses this sheet
 
   useEffect(() => {
     setFull(fullCache.get(photoId) || null);
@@ -1976,8 +1966,19 @@ function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel,
           <button class="pos-btn" disabled=${!onPrev} onClick=${onPrev} aria-label="Previous">‹</button>
           <span>${position}</span>
           <button class="pos-btn" disabled=${!onNext} onClick=${onNext} aria-label="Next">›</button></p>`}
-        ${editing ? html`<${ItemForm} initial=${item} submitLabel="Save square" compact
-            onSubmit=${(it) => { onEdit(it); setEditing(false); }} onCancel=${() => setEditing(false)} />`
+        ${editing ? html`<div class="square-edit">
+            <${ItemForm} initial=${item} submitLabel="Save" compact onCancel=${() => setEditing(false)}
+              onSubmit=${(it) => {
+                onEdit(it);
+                // Fix the item for future games too (its hunt-list entry), unless unticked.
+                const acts = bankActions(currentBank);
+                const listIt = alsoList && acts.find(item);
+                if (listIt) acts.saveEdit(listIt, { ...listIt, ...it, mine: isMine(listIt) });
+                setEditing(false);
+              }}
+              beforeActions=${bankActions(currentBank).find(item) && html`<label class="toggle also-list"><input type="checkbox" checked=${alsoList} onChange=${(e) => setAlsoList(e.target.checked)} />
+                <span>Also change it in the hunt item list <small>(future games)</small></span></label>`} />
+          </div>`
           : canAct && html`<${PhotoButtons} label=${actionLabel} onFile=${wrap(onFile)} />`}
         ${onRemove && html`<button class="btn small danger" onClick=${wrap(onRemove)}>${removeLabel || 'Remove photo'}</button>`}
         ${!editing && html`<${IconTools} tools=${[
@@ -1987,7 +1988,6 @@ function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel,
           onBlock && [ic('ban', 22), 'Block', () => confirmBlock(item.text) && onBlock()],
           // Shown right away (greyed until the full photo arrives) so the sheet doesn't jump when it does.
           photoId && [ic('download', 22), 'Save photo', () => full && saveDataUrl(full, item.text), !full],
-          onListEdit && [ic('pencil', 22), 'Edit item', onListEdit],
         ]} />`}
         ${busy && html`<div class="busy"><div class="spinner"></div>Uploading…</div>`}
       </div>
@@ -2605,6 +2605,16 @@ function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     });
   };
 
+  const editCard = async (idx, it) => {
+    const card = hand[idx];
+    await tx((g) => {
+      const h = (g.hands?.[me.id] || []).slice();
+      if (h[idx]?.text !== card.text) return false;
+      h[idx] = { ...h[idx], ...it };
+      g.hands = { ...g.hands, [me.id]: h };
+    }).catch((e) => toast(`Editing needs a connection: ${e.message}`, 'error'));
+  };
+
   const swapCard = async (idx, choice, counted) => {
     const card = hand[idx];
     await tx((g) => {
@@ -2693,6 +2703,7 @@ function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
     ${card && html`<${SquareModal} item=${card} found=${false} canAct=${!pending && !over} actionLabel="Snap it"
       onFile=${(f) => snap(handIdx, f)} onNoPhoto=${() => snap(handIdx, null)}
+      onEdit=${!pending && !over ? (it) => editCard(handIdx, it) : null}
       onBlock=${() => { blockItem(card.text); swapCard(handIdx, null, false); setHandIdx(null); }}
       onClose=${() => setHandIdx(null)} />`}
     ${openClaim && html`<${SquareModal} item=${game.items[open]} photoId=${openClaim.photo} found=${true}
@@ -2709,6 +2720,7 @@ const endlessTiers = () => [['any', ic('dice'), 'Surprise'], ['e', '★', '1 pt'
 function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
   const [open, setOpen] = useState(null); // history index being viewed
   const [snapId, setSnapId] = useState(null); // slot open in the snap sheet (multi-slot layout)
+  const [editFirst, setEditFirst] = useState(false); // open that sheet straight into editing
   const [busy, setBusy] = useState(false);
   const celebrate = useCelebrate(game.winner);
 
@@ -2718,7 +2730,6 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
   const turns = st.turnMode === 'turns';
   const canSnap = isPlayer && !over && (!turns || st.turn === me.id);
   const name = (pid) => (pid === me.id ? 'You' : firstName(playersById[pid]));
-  const [listEdit, setListEdit] = useState(null); // history item being edited in the hunt list
   const [histF, setHistF] = useState([]); // filter for "Everything so far"
   const histKind = (h) => (G.isFind(h) ? (h.photo ? 'photo' : 'found') : h.rerolled ? 'rerolled' : h.expired ? 'expired' : h.blocked ? 'blocked' : 'skipped');
   const allHistory = (game.history || []).map((h, i) => ({ ...h, i })).reverse();
@@ -2734,6 +2745,11 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     return G.withEndlessState(g, s2);
   });
   const slotOf = (s2, id) => s2.active.find((a) => a.id === id);
+  const editSlot = (slot, it) => update((s2) => {
+    const a = slotOf(s2, slot.id);
+    if (!a?.item || a.item.text !== slot.item.text) return false;
+    a.item = { ...a.item, ...it };
+  }).catch((e) => toast(`Editing needs a connection: ${e.message}`, 'error'));
 
   const capture = async (slot, file) => {
     setBusy(true);
@@ -2845,6 +2861,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
                 [ic('checkCircle', 22), 'No photo', () => capture(slot, null).catch((e) => toast(e.message, 'error'))],
                 canReroll(game, game.rerolls?.[me.id]) && [ic('dice', 22), `Reroll${game.rerolls?.[me.id] ? ` (${game.rerolls[me.id]})` : ''}`, () => reroll(slot)],
                 [ic('ban', 22), 'Block', () => confirmBlock(slot.item.text) && block(slot)],
+                [ic('pencil', 22), 'Edit', () => { setEditFirst(true); setSnapId(slot.id); }],
               ]} />
             </div>` : html`<${QuickSnap} onFile=${(f) => capture(slot, f).catch((e) => toast(e.message, 'error'))} />`)}
           </div>`)}
@@ -2877,10 +2894,12 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     ${busy && html`<div class="busy"><div class="spinner"></div>Uploading…</div>`}
 
     ${snapSlot && html`<${SquareModal} item=${snapSlot.item} found=${false} canAct=${canSnap} actionLabel="Snap it"
+      onEdit=${isPlayer && !over ? (it) => { editSlot(snapSlot, it); if (editFirst) { setEditFirst(false); setSnapId(null); } } : null}
+      startEditing=${editFirst}
       onFile=${(f) => capture(snapSlot, f)} onNoPhoto=${() => capture(snapSlot, null)}
       onReroll=${canSnap && canReroll(game, game.rerolls?.[me.id]) ? () => reroll(snapSlot) : null} rerolls=${game.rerolls?.[me.id] || 0}
       onBlock=${canSnap ? () => { block(snapSlot); setSnapId(null); } : null}
-      onClose=${() => setSnapId(null)} />`}
+      onClose=${() => { setSnapId(null); setEditFirst(false); }} />`}
     ${viewing && (() => {
       // Sheet walks the list in display order (newest first): swipe left goes down the list.
       const k = history.findIndex((h) => h.i === open);
@@ -2893,10 +2912,8 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         prefetch=${[history[k - 1]?.photo, history[k + 1]?.photo]}
         onPrev=${k > 0 ? () => setOpen(history[k - 1].i) : null}
         onNext=${k < history.length - 1 ? () => setOpen(history[k + 1].i) : null}
-        onListEdit=${() => setListEdit(viewing.item)}
         canAct=${false} onClose=${() => setOpen(null)} />`;
     })()}
-    ${listEdit && html`<${ListItemEditor} item=${listEdit} onClose=${() => setListEdit(null)} />`}
   `;
 }
 
