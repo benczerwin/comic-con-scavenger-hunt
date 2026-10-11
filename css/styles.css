@@ -539,7 +539,8 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .quick-btns { flex: none; display: flex; gap: var(--s2); }
 .quick-btn { width: 46px; height: 46px; display: grid; place-items: center; border: 3px solid var(--ink); border-radius: 50%;
   background: #fff; font-size: 1.25rem; box-shadow: 2px 2px 0 var(--ink); cursor: pointer; padding: 0; }
-.quick-btn.snap { background: var(--red); }
+.quick-btn { color: var(--ink); }
+.quick-btn.snap { background: var(--red); color: #fff; }
 .quick-btn:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--ink); }
 .slot-actions .btn { padding: 10px 14px; white-space: nowrap; }
 .slot-actions .btn.primary { flex: 1; font-family: var(--display); font-size: 1.2rem; letter-spacing: 1px; }

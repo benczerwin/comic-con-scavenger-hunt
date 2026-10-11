@@ -724,6 +724,12 @@ function NewGame({ mode, me, players }) {
 
 const svgIcon = (d, size = 22) => html`<svg viewBox="0 0 24 24" width=${size} height=${size} fill="none" stroke="currentColor"
   stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d=${d} /></svg>`;
+// Camera body + lens, and a framed picture: the Endless quick-snap buttons.
+const CAMERA_ICON = svgIcon('M3 8.5A2.5 2.5 0 0 1 5.5 6h2l1.5-2h6l1.5 2h2A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z', 22);
+const PHOTOS_ICON = html`<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor"
+  stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="3" y="4" width="18" height="16" rx="2.5" /><circle cx="9" cy="9.5" r="1.7" fill="currentColor" stroke="none" />
+  <path d="M3.5 18l5-5 3.5 3.5 2.5-2.5 6 6" /></svg>`;
 // Chunky filled bar chart.
 const STATS_ICON = html`<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true" fill="currentColor">
   <rect x="3" y="11" width="5" height="10" rx="1.5" /><rect x="9.5" y="4" width="5" height="17" rx="1.5" /><rect x="16" y="8" width="5" height="13" rx="1.5" /></svg>`;
@@ -1404,9 +1410,9 @@ function QuickSnap({ onFile }) {
   };
   return html`<div class="quick-btns">
     ${hasLiveCamera
-      ? html`<button class="quick-btn snap" aria-label="Snap it" onClick=${() => setCamera(true)}>📸</button>`
-      : html`<label class="quick-btn snap" aria-label="Snap it">📸<input type="file" accept="image/*" capture=${capture} onChange=${handle} hidden /></label>`}
-    <label class="quick-btn" aria-label="From iPhone">🖼️<input type="file" accept="image/*" onChange=${handle} hidden /></label>
+      ? html`<button class="quick-btn snap" aria-label="Snap it" onClick=${() => setCamera(true)}>${CAMERA_ICON}</button>`
+      : html`<label class="quick-btn snap" aria-label="Snap it">${CAMERA_ICON}<input type="file" accept="image/*" capture=${capture} onChange=${handle} hidden /></label>`}
+    <label class="quick-btn" aria-label="From iPhone">${PHOTOS_ICON}<input type="file" accept="image/*" onChange=${handle} hidden /></label>
     ${hasLiveCamera && html`<input ref=${nativeRef} type="file" accept="image/*" capture=${capture} onChange=${handle} hidden />`}
     ${camera && html`<${CameraView} onFile=${onFile} onClose=${() => setCamera(false)} onFallback=${() => nativeRef.current?.click()} />`}
   </div>`;
