@@ -986,8 +986,8 @@ function StatsScreen({ me, players, playersById, focus }) {
             <div><b>${s.photos}</b><small>Photos</small></div>
             <div><b>${s.tiers.h}</b><small>Hard finds</small></div>
           </div>
-          ${s.topCat && html`<p class="top-cat"><span class=${`dot cat-${s.topCat}`}></span> Top category: <b>${catLabel(s.topCat)}</b>
-            <span class="muted">· ${pct(s.cats[s.topCat], s.found)} of finds</span></p>`}
+          ${s.topItems[0] && html`<p class="top-cat"><span class=${`top-icon cat-${s.topItems[0].item.cat}`}>${itemIcon(s.topItems[0].item.icon)}</span>
+            ${s.topItems[0].n > 1 ? 'Most found:' : 'Latest find:'} <b>${s.topItems[0].item.text}</b>${s.topItems[0].n > 1 ? html` <span class="muted">· ${s.topItems[0].n}×</span>` : ''}</p>`}
         </a>`;
       })}
     </main>`;
@@ -1035,8 +1035,6 @@ function PlayerStats({ p, s, me, playersById }) {
   const thumbs = useWatch((cb) => store.watchWhere('thumbs', 'by', '==', p.id, cb), [p.id]);
   if (!s) return html`<main class="screen"><nav class="topbar"><a class="back" href="#/stats">‹ All players</a></nav>
     <div class="panel center muted">${p.name} hasn't played yet.</div></main>`;
-  const cats = Object.entries(s.cats).sort((a, b) => b[1] - a[1]);
-  const maxCat = cats[0]?.[1] || 1;
   const photos = (thumbs || []).slice().sort((a, b) => (b.at || 0) - (a.at || 0));
   return html`
     <main class="screen">
@@ -1069,14 +1067,13 @@ function PlayerStats({ p, s, me, playersById }) {
         </div>
       </section>
 
-      ${cats.length > 0 && html`<section class="panel">
-        <h2>Top categories</h2>
+      ${s.topItems.length > 0 && html`<section class="panel">
+        <h2>Top finds</h2>
         <div class="top-cats">
-          ${cats.map(([c, n], k) => html`<div class="top-cat-row" key=${c}>
+          ${s.topItems.slice(0, 5).map((t, k) => html`<div class="top-find-row" key=${t.item.text}>
             <span class="rank">${k + 1}</span>
-            <span class=${`dot cat-${c}`}></span>
-            <span class="grow"><b>${catLabel(c) || c}</b><small>${n} find${n === 1 ? '' : 's'} · ${pct(n, s.found)} of ${p.id === me.id ? 'your' : 'their'} finds</small></span>
-            <span class="bar"><span class=${`cat-${c}`} style=${`width:${(n / maxCat) * 100}%`}></span></span>
+            <span class=${`top-icon cat-${t.item.cat}`}>${itemIcon(t.item.icon)}</span>
+            <span class="grow"><b>${t.item.text}</b><small>${catLabel(t.item.cat)} · found ${t.n}×</small></span>
           </div>`)}
         </div>
       </section>`}

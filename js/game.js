@@ -152,15 +152,18 @@ export function playerStats(games, boards) {
   const stats = {};
   const S = (pid) => (stats[pid] ??= {
     games: 0, finished: 0, wins: 0, teamWins: 0, found: 0, photos: 0, lines: 0, blackouts: 0, rerolls: 0,
-    tiers: { e: 0, m: 0, h: 0 }, cats: {}, recent: [],
+    tiers: { e: 0, m: 0, h: 0 }, cats: {}, items: {}, recent: [],
   });
-  const tally = (s, item, photo) => {
+  const tally = (s, item, photo, at) => {
     if (!item || item.tier === 'free') return;
     s.found++;
     if (photo) s.photos++;
     if (s.tiers[item.tier] !== undefined) s.tiers[item.tier]++;
     const cat = LEGACY_CATS[item.cat] || item.cat; // finds from older games use the new categories
     s.cats[cat] = (s.cats[cat] || 0) + 1;
+    const it = (s.items[item.text] ??= { item, n: 0, at: 0 });
+    it.n++;
+    it.at = Math.max(it.at, at || 0);
   };
 
   for (const g of games) {
@@ -173,17 +176,17 @@ export function playerStats(games, boards) {
       s.recent.push(g);
     }
     if (g.mode === 'endless') {
-      for (const h of g.history || []) if (isFind(h)) tally(S(h.by), h.item, h.photo);
+      for (const h of g.history || []) if (isFind(h)) tally(S(h.by), h.item, h.photo, h.at);
       for (const [pid, n] of Object.entries(g.rerolls || {})) S(pid).rerolls += n;
     } else if (g.mode !== 'bingo') {
-      for (const [i, c] of Object.entries(g.claims || {})) tally(S(c.by), g.items?.[i], c.photo);
+      for (const [i, c] of Object.entries(g.claims || {})) tally(S(c.by), g.items?.[i], c.photo, c.at);
       for (const [pid, n] of Object.entries(g.rerolls || {})) S(pid).rerolls += n;
     }
   }
   for (const b of boards) {
     if (!byCode[b.gameId]) continue; // board of a deleted game
     const s = S(b.playerId);
-    for (const [i, m] of Object.entries(b.marks || {})) tally(s, b.items?.[i], m.photo);
+    for (const [i, m] of Object.entries(b.marks || {})) tally(s, b.items?.[i], m.photo, m.at);
     const sc = scoreBoard(b);
     s.lines += sc.lines;
     if (sc.blackout) s.blackouts++;
@@ -192,6 +195,8 @@ export function playerStats(games, boards) {
   for (const s of Object.values(stats)) {
     s.recent.sort((a, b) => b.createdAt - a.createdAt);
     s.topCat = Object.entries(s.cats).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+    // Most-found specific items; ties go to the most recent find.
+    s.topItems = Object.values(s.items).sort((a, b) => b.n - a.n || b.at - a.at);
   }
   return stats;
 }

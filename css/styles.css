@@ -501,6 +501,13 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .top-cat { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: var(--s3) 0 0; font-weight: 700; font-size: 0.85rem; }
 .top-cat .dot, .top-cat-row .dot, .cat-card .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ink); background: var(--tile); flex: none; }
 .top-cats { display: flex; flex-direction: column; gap: var(--s3); }
+.top-icon { display: inline-grid; place-items: center; width: 28px; height: 28px; border: 2px solid var(--ink); border-radius: 8px;
+  background: var(--tile, #fff); font-size: 1rem; flex: none; }
+.top-find-row { display: grid; grid-template-columns: 22px 34px 1fr; align-items: center; gap: var(--s2); }
+.top-find-row .top-icon { width: 34px; height: 34px; font-size: 1.2rem; }
+.top-find-row .rank { font-family: var(--display); font-size: 1.2rem; text-align: center; }
+.top-find-row:first-child .rank { color: var(--red); }
+.top-find-row small { display: block; color: var(--muted); font-weight: 700; font-size: 0.75rem; }
 .top-cat-row { display: grid; grid-template-columns: 22px 14px 1fr 34%; align-items: center; gap: var(--s2); }
 .top-cat-row .rank { font-family: var(--display); font-size: 1.2rem; text-align: center; }
 .top-cat-row:first-child .rank { color: var(--red); }
