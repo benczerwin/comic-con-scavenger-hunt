@@ -934,6 +934,7 @@ function StatsScreen({ me, players, playersById, focus }) {
   if (games === undefined || boards === undefined) return html`<main class="screen"><p class="muted center">Crunching numbers…</p></main>`;
 
   const stats = G.playerStats(games, boards);
+  const catStats = G.categoryStats(games, boards);
   const ranked = (players || []).filter((p) => stats[p.id])
     .sort((a, b) => stats[b.id].wins - stats[a.id].wins || stats[b.id].found - stats[a.id].found);
 
@@ -967,6 +968,8 @@ function StatsScreen({ me, players, playersById, focus }) {
           })}
         </div>
       </section>`}
+      ${Object.keys(catStats).length > 0 && html`<${CategoryStats} cs=${catStats} playersById=${playersById} />`}
+      ${ranked.length > 0 && html`<h2 class="section-title">Players</h2>`}
       ${ranked.map((p, k) => {
         const s = stats[p.id];
         return html`<a class="panel stat-card" href="#/stats/${p.id}" key=${p.id}>
@@ -983,9 +986,49 @@ function StatsScreen({ me, players, playersById, focus }) {
             <div><b>${s.photos}</b><small>Photos</small></div>
             <div><b>${s.tiers.h}</b><small>Hard finds</small></div>
           </div>
+          ${s.topCat && html`<p class="top-cat"><span class=${`dot cat-${s.topCat}`}></span> Top category: <b>${catLabel(s.topCat)}</b>
+            <span class="muted">· ${pct(s.cats[s.topCat], s.found)} of finds</span></p>`}
         </a>`;
       })}
     </main>`;
+}
+
+/** Every category side by side: how often it's in play, how often it's found, and its stars. */
+function CategoryStats({ cs, playersById }) {
+  const rows = Object.keys(CATEGORY_LABELS).filter((c) => cs[c]).map((c) => [c, cs[c]]);
+  const totalFound = rows.reduce((t, [, c]) => t + c.found, 0);
+  const maxDealt = Math.max(1, ...rows.map(([, c]) => c.dealt));
+  const top = (o, n) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, n);
+  return html`<section class="panel">
+    <h2>Categories</h2>
+    <p class="muted small">How often each kind of item ends up in play, and how often it gets found.</p>
+    <div class="bars cat-usage">
+      ${rows.map(([c, v]) => html`<div class="bar-row" key=${c}>
+        <span>${catLabel(c)}</span>
+        <span class="bar"><span class=${`cat-${c}`} style=${`width:${(v.dealt / maxDealt) * 100}%`}></span></span>
+        <b>${v.dealt}</b></div>`)}
+    </div>
+    <p class="muted small bar-caption">Times in play</p>
+    <p class="muted small">Found % = how often items of that kind get found once they're in play. Share = its slice of everyone's finds.</p>
+    <div class="cat-cards">
+      ${rows.map(([c, v]) => {
+        const hunter = top(v.hunters, 1)[0];
+        const hp = hunter && playersById[hunter[0]];
+        return html`<div class=${`cat-card cat-${c}`} key=${c}>
+          <h3><span class=${`dot cat-${c}`}></span> ${catLabel(c)}</h3>
+          <div class="stat-grid">
+            <div><b>${v.found}</b><small>Finds</small></div>
+            <div><b>${pct(v.found, v.dealt)}</b><small>Found %</small></div>
+            <div><b>${pct(v.found, totalFound)}</b><small>Share</small></div>
+            <div><b>${v.photos}</b><small>Photos</small></div>
+          </div>
+          ${hp && html`<p class="cat-line">${ic('trophy')} Top hunter: <${Emblem} id=${hp.emblem} size=${20} /> <b>${firstName(hp)}</b> <span class="muted">(${hunter[1]})</span></p>`}
+          ${Object.keys(v.items).length > 0 && html`<p class="cat-line">${ic('search')} Most found: ${top(v.items, 3).map(([t, n], k) => html`${k ? ', ' : ''}<b>${t}</b> <span class="muted">(${n})</span>`)}</p>`}
+          <p class="cat-line muted">${ic('dice')} In ${v.games} game${v.games === 1 ? '' : 's'}</p>
+        </div>`;
+      })}
+    </div>
+  </section>`;
 }
 
 function PlayerStats({ p, s, me, playersById }) {
@@ -1024,12 +1067,19 @@ function PlayerStats({ p, s, me, playersById }) {
           <div><b>${s.tiers.m}</b><small>★★ Medium</small></div>
           <div><b>${s.tiers.h}</b><small>★★★ Hard</small></div>
         </div>
-        ${cats.length > 0 && html`<h2>Favorite kinds of finds</h2>
-          <div class="bars">${cats.map(([c, n]) => html`<div class="bar-row" key=${c}>
-            <span>${catLabel(c) || c}</span>
-            <span class="bar"><span class=${`cat-${c}`} style=${`width:${(n / maxCat) * 100}%`}></span></span>
-            <b>${n}</b></div>`)}</div>`}
       </section>
+
+      ${cats.length > 0 && html`<section class="panel">
+        <h2>Top categories</h2>
+        <div class="top-cats">
+          ${cats.map(([c, n], k) => html`<div class="top-cat-row" key=${c}>
+            <span class="rank">${k + 1}</span>
+            <span class=${`dot cat-${c}`}></span>
+            <span class="grow"><b>${catLabel(c) || c}</b><small>${n} find${n === 1 ? '' : 's'} · ${pct(n, s.found)} of ${p.id === me.id ? 'your' : 'their'} finds</small></span>
+            <span class="bar"><span class=${`cat-${c}`} style=${`width:${(n / maxCat) * 100}%`}></span></span>
+          </div>`)}
+        </div>
+      </section>`}
 
       <section class="panel">
         <h2>Games</h2>

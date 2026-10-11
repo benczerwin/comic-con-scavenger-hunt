@@ -196,6 +196,47 @@ export function playerStats(games, boards) {
   return stats;
 }
 
+/** How each item category fares across all games: { cat: { games, dealt, found, photos, items: {text: finds}, hunters: {pid: finds} } }.
+ *  dealt = times an item of that category was put in play (on a board, placed, or dealt in Endless). */
+export function categoryStats(games, boards) {
+  const byCode = Object.fromEntries(games.map((g) => [g.code, g]));
+  const out = {};
+  const C = (item) => {
+    if (!item || item.tier === 'free') return null;
+    const cat = LEGACY_CATS[item.cat] || item.cat;
+    return (out[cat] ??= { games: 0, dealt: 0, found: 0, photos: 0, items: {}, hunters: {} });
+  };
+  const dealt = (item) => { const c = C(item); if (c) c.dealt++; };
+  const found = (item, pid, photo) => {
+    const c = C(item);
+    if (!c) return;
+    c.found++;
+    if (photo) c.photos++;
+    c.items[item.text] = (c.items[item.text] || 0) + 1;
+    if (pid) c.hunters[pid] = (c.hunters[pid] || 0) + 1;
+  };
+  for (const g of games) {
+    const seen = new Set(); // categories in play this game
+    const note = (item) => { const c = C(item); if (c) seen.add(c); };
+    if (g.mode === 'endless') {
+      for (const h of g.history || []) { dealt(h.item); note(h.item); if (isFind(h)) found(h.item, h.by, h.photo); }
+      for (const a of g.active || []) if (a.item) { dealt(a.item); note(a.item); }
+    } else if (g.mode !== 'bingo') {
+      for (const it of g.items || []) if (it) { dealt(it); note(it); }
+      for (const [i, c] of Object.entries(g.claims || {})) found(g.items?.[i], c.by, c.photo);
+    }
+    for (const c of seen) c.games++;
+  }
+  const bingoSeen = {};
+  for (const b of boards) {
+    if (!byCode[b.gameId]) continue;
+    for (const it of b.items || []) { dealt(it); const c = C(it); if (c) (bingoSeen[b.gameId] ??= new Set()).add(c); }
+    for (const [i, m] of Object.entries(b.marks || {})) found(b.items?.[i], b.playerId, m.photo);
+  }
+  for (const set of Object.values(bingoSeen)) for (const c of set) c.games++;
+  return out;
+}
+
 // ── Endless: one challenge at a time, players take turns.
 export const ENDLESS_POINTS = { e: 1, m: 2, h: 3 };
 /** Endless history also logs items that left the board without being found (rerolled, swapped out, skipped). */

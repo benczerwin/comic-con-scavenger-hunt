@@ -497,6 +497,24 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .player-hero { display: flex; align-items: center; gap: var(--s4); margin-bottom: var(--s5); }
 .player-hero .title { margin: 0; }
 .player-hero p { margin: 2px 0 0; }
+.section-title { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.5px; margin: var(--s5) 0 var(--s3); }
+.top-cat { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: var(--s3) 0 0; font-weight: 700; font-size: 0.85rem; }
+.top-cat .dot, .top-cat-row .dot, .cat-card .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ink); background: var(--tile); flex: none; }
+.top-cats { display: flex; flex-direction: column; gap: var(--s3); }
+.top-cat-row { display: grid; grid-template-columns: 22px 14px 1fr 34%; align-items: center; gap: var(--s2); }
+.top-cat-row .rank { font-family: var(--display); font-size: 1.2rem; text-align: center; }
+.top-cat-row:first-child .rank { color: var(--red); }
+.top-cat-row small { display: block; color: var(--muted); font-weight: 700; font-size: 0.75rem; }
+.top-cat-row .bar { height: 14px; border: 2px solid var(--ink); border-radius: 999px; background: #fff; overflow: hidden; }
+.top-cat-row .bar span { display: block; height: 100%; background: var(--tile); }
+.bar-caption { margin: var(--s1) 0 0; text-align: right; }
+.cat-cards { display: flex; flex-direction: column; gap: var(--s3); margin-top: var(--s4); }
+.cat-card { border: 2px solid var(--ink); border-radius: 12px; padding: var(--s3); background: #fff; box-shadow: inset 6px 0 0 var(--tile); padding-left: calc(var(--s3) + 6px); }
+.cat-card h3 { display: flex; align-items: center; gap: var(--s2); margin: 0; }
+.cat-card .stat-grid { grid-template-columns: repeat(4, 1fr); }
+.cat-card .stat-grid b { font-size: 1.2rem; }
+.cat-line { margin: var(--s2) 0 0; font-size: 0.85rem; font-weight: 600; line-height: 1.5; }
+.cat-line .emblem { vertical-align: -5px; }
 .bars { display: flex; flex-direction: column; gap: var(--s2); }
 .bar-row { display: grid; grid-template-columns: 90px 1fr 28px; align-items: center; gap: 8px; font-weight: 700; font-size: 0.9rem; }
 .bar-row .bar { height: 14px; border: 2px solid var(--ink); border-radius: 999px; background: #fff; overflow: hidden; }
