@@ -87,7 +87,14 @@ export function generateCard({ size, difficulty = 'balanced', freeCenter = false
 /** Items games draw from: built-ins minus disabled ones, plus custom items. bank = settings/itemBank doc. */
 export function buildPool(bank) {
   const off = new Set(bank?.disabled || []);
-  return [...ITEMS, ...(bank?.custom || []).map((c) => ({ ...normalizeItem(c), custom: true }))].filter((it) => !off.has(it.text));
+  return [...withOverrides(bank), ...(bank?.custom || []).map((c) => ({ ...normalizeItem(c), custom: true }))].filter((it) => !off.has(it.orig || it.text));
+}
+
+/** Built-in items with your edits applied. An edited item keeps its original text in `orig`, which stays its key
+ *  (for on/off and saved sets) so renaming it doesn't lose those. bank.overrides = { originalText: { icon, text, tier, cat, mine } }. */
+export function withOverrides(bank) {
+  const ov = bank?.overrides || {};
+  return ITEMS.map((it) => (ov[it.text] ? { ...it, ...ov[it.text], orig: it.text } : it));
 }
 
 /** Every straight run of length k (rows, cols, both diagonals) in an n×n grid. */

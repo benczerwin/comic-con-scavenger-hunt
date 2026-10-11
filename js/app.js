@@ -1293,9 +1293,8 @@ function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compa
           onClick=${() => { setIcon(n); setPicking(false); }}>${ic(n)}</button>`)}
       </div>`}
       <${Choice} value=${tier} onChange=${setTier} options=${Object.entries(TIER_LABELS).map(([k, l]) => [k, l, TIER_STARS[k]])} />
-      <select class="text" value=${cat} onChange=${(e) => setCat(e.target.value)} aria-label="Category">
-        ${Object.entries(CATEGORY_LABELS).map(([k, l]) => html`<option value=${k}>${l}</option>`)}
-      </select>
+      <div class="row cat-select"><${SingleSelect} label="Category" value=${cat} onChange=${setCat}
+        options=${Object.entries(CATEGORY_LABELS).map(([k, l]) => ({ value: k, label: l }))} /></div>
       ${!compact && html`<label class="toggle mine-toggle"><input type="checkbox" checked=${mine} onChange=${(e) => setMine(e.target.checked)} />
         <span>Mark as mine <small>(adds it to your list and the Mine filter)</small></span></label>`}
       <div class="row end">
@@ -1306,6 +1305,24 @@ function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compa
 }
 
 
+/** Sheet for changing one item in the list. */
+function ItemEditSheet({ item, onSave, onClose, onReset, onDelete }) {
+  useScrollLock();
+  const sheet = useSwipeDown(onClose);
+  return html`<div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && onClose()}>
+    <div class="modal" ref=${sheet}>
+      <button class="x" onClick=${onClose} aria-label="Close">×</button>
+      <h2 class="sheet-title">Edit item</h2>
+      ${item.orig && html`<p class="muted small">Originally "${item.orig}".</p>`}
+      <${ItemForm} initial=${{ ...item, mine: isMine(item) }} submitLabel="Save changes" onSubmit=${onSave} onCancel=${onClose} />
+      ${(onReset || onDelete) && html`<div class="row center-row">
+        ${onReset && html`<button class="btn small ghost" onClick=${onReset}>${ic('undo')} Reset to original</button>`}
+        ${onDelete && html`<button class="btn small danger" onClick=${onDelete}>${ic('trash')} Delete item</button>`}
+      </div>`}
+    </div>
+  </div>`;
+}
+
 function ItemsScreen({ bank }) {
   const [q, setQ] = useState('');
   const [tier, setTier] = useState('all');
@@ -1313,11 +1330,40 @@ function ItemsScreen({ bank }) {
   const [catF, setCatF] = useState('all');
   const disabled = new Set(bank?.disabled || []);
   const custom = bank?.custom || [];
-  const all = [...custom.map((c) => ({ ...normalizeItem(c), custom: true })), ...ITEMS];
+  const overrides = bank?.overrides || {};
+  const all = [...custom.map((c) => ({ ...normalizeItem(c), custom: true })), ...G.withOverrides(bank)];
+  const key = (it) => it.orig || it.text; // what on/off is stored under
+  const [editing, setEditing] = useState(null); // item being edited
 
   const save = (next) => store.put('settings', BANK_ID, {
-    disabled: bank?.disabled || [], custom, presets: bank?.presets || [], ...next, updatedAt: Date.now(),
+    disabled: bank?.disabled || [], custom, presets: bank?.presets || [], overrides, ...next, updatedAt: Date.now(),
   }).catch((e) => toast(`Sync problem: ${e.message}`, 'error'));
+
+  const saveEdit = (orig, it) => {
+    if (all.some((x) => x !== orig && x.text.toLowerCase() === it.text.toLowerCase())) return toast('Another item already has that name.', 'error');
+    if (orig.custom) {
+      // Your own item: rewrite it in place (and carry its on/off over to a new name).
+      const d = [...disabled].map((t) => (t === orig.text ? it.text : t));
+      save({ custom: custom.map((c) => (c.text === orig.text ? { ...c, ...it } : c)), disabled: d });
+    } else {
+      const base = ITEMS.find((x) => x.text === key(orig));
+      const ov = { ...overrides };
+      const changed = ['text', 'tier', 'cat'].some((k) => it[k] !== base[k]) || itemIconName(it.icon) !== itemIconName(base.icon)
+        || !!it.mine !== !!base.mine;
+      if (changed) ov[base.text] = { icon: it.icon, text: it.text, tier: it.tier, cat: it.cat, mine: !!it.mine };
+      else delete ov[base.text];
+      save({ overrides: ov });
+    }
+    setEditing(null);
+    toast('Saved', 'good');
+  };
+  const resetItem = (it) => {
+    const ov = { ...overrides };
+    delete ov[key(it)];
+    save({ overrides: ov });
+    setEditing(null);
+    toast(`Back to "${key(it)}"`);
+  };
 
   const toggle = (text) => {
     const d = new Set(disabled);
@@ -1329,13 +1375,12 @@ function ItemsScreen({ bank }) {
     save({ custom: [it, ...custom] });
     toast(`Added: ${it.text}`, 'good');
   };
-  const setMine = (text, mine) => save({ custom: custom.map((c) => (c.text === text ? { ...c, mine } : c)) });
   const removeCustom = (text) => {
     if (!confirm(`Delete "${text}"?`)) return;
     save({ custom: custom.filter((c) => c.text !== text), disabled: [...disabled].filter((t) => t !== text) });
   };
   const setAll = (on) => {
-    const visibleTexts = filtered.map((i) => i.text);
+    const visibleTexts = filtered.map(key);
     const changes = visibleTexts.filter((t) => disabled.has(t) === on).length;
     if (changes > 10 && !confirm(`Turn ${on ? 'on' : 'off'} ${changes} items? Save your current set first if you want to come back to it.`)) return;
     const d = new Set(disabled);
@@ -1365,7 +1410,7 @@ function ItemsScreen({ bank }) {
   const filtered = all.filter((it) =>
     (hideStars || tier === 'all' || it.tier === tier) &&
     (catF === 'all' || it.cat === catF) &&
-    (show === 'all' || (show === 'on' && !disabled.has(it.text)) || (show === 'off' && disabled.has(it.text)) || (show === 'custom' && isMine(it))) &&
+    (show === 'all' || (show === 'on' && !disabled.has(key(it))) || (show === 'off' && disabled.has(key(it))) || (show === 'custom' && isMine(it))) &&
     (!needle || it.text.toLowerCase().includes(needle)));
   const byCat = Object.keys(CATEGORY_LABELS).map((cat) => [cat, filtered.filter((i) => i.cat === cat)]).filter(([, xs]) => xs.length);
   const onCount = all.filter((i) => !disabled.has(i.text)).length;
@@ -1414,19 +1459,20 @@ function ItemsScreen({ bank }) {
         <section class="panel item-group" key=${cat}>
           <h2><span class="dot cat-${cat}"></span>${CATEGORY_LABELS[cat]} <small class="muted">${items.length}</small></h2>
           ${items.map((it) => {
-            const on = !disabled.has(it.text);
-            return html`<div class="item-row ${on ? '' : 'off'}" key=${it.text}>
+            const on = !disabled.has(key(it));
+            return html`<div class="item-row ${on ? '' : 'off'}" key=${key(it)}>
+              <button class="item-edit" aria-label=${`Edit ${it.text}`} onClick=${() => setEditing(it)}>
               <span class="icon">${itemIcon(it.icon)}</span>
-              <span class="grow">${it.text}${it.custom
-                ? html` <button class=${'badge' + (isMine(it) ? '' : ' off')} aria-pressed=${isMine(it)} title="Tap to add to or remove from your list"
-                    onClick=${() => setMine(it.text, !isMine(it))}>${isMine(it) ? 'mine' : '+ mine'}</button>`
-                : isMine(it) && html` <i class="badge">mine</i>`}<small class="stars">${TIER_STARS[it.tier]}</small></span>
-              ${it.custom && html`<button class="icon-btn round" aria-label="Delete item" onClick=${() => removeCustom(it.text)}>${TRASH_SVG}</button>`}
-              <label class="switch"><input type="checkbox" checked=${on} onChange=${() => toggle(it.text)} /><span></span></label>
+              <span class="grow">${it.text}${it.orig ? html` <i class="badge edited">edited</i>` : ''}${isMine(it) && html` <i class="badge">mine</i>`}<small class="stars">${TIER_STARS[it.tier]}</small></span>
+              </button>
+              <label class="switch"><input type="checkbox" checked=${on} onChange=${() => toggle(key(it))} /><span></span></label>
             </div>`;
           })}
         </section>`)}
       ${!filtered.length && html`<p class="muted center">No items match.</p>`}
+      ${editing && html`<${ItemEditSheet} item=${editing} onSave=${(it) => saveEdit(editing, it)} onClose=${() => setEditing(null)}
+        onReset=${editing.orig ? () => resetItem(editing) : null}
+        onDelete=${editing.custom ? () => { removeCustom(editing.text); setEditing(null); } : null} />`}
     </main>`;
 }
 
