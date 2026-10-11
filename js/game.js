@@ -299,7 +299,7 @@ export function drawEndless(pool, { tier = 'any', exclude = [] }) {
   return from.length ? strip(from[Math.floor(Math.random() * from.length)]) : null;
 }
 
-/** Endless games keep 1–3 active slots: { id, item, tier, mix, at } or { id, pick: { by } } (waiting
+/** Endless games keep 1–5 active slots: { id, item, tier, mix, at } or { id, pick: { by } } (waiting
  *  for someone to choose the next item). Upgrades games made before slots existed (current/pick). */
 export function endlessState(g) {
   if (g.active) return { active: g.active, slots: g.slots || g.active.length || 1, turnMode: g.turnMode || 'any', turn: g.turn || null };
