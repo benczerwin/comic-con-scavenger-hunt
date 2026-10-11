@@ -1,6 +1,18 @@
 // Renders a finished game into one shareable comic-poster PNG.
 import { emblemSVG, emblemById } from './data/emblems.js';
 import * as G from './game.js';
+import { drawIcon } from './icons.js';
+
+/** Centered line of text with a line icon in front of it. Uses the current font/fill. */
+function iconLine(ctx, icon, text, cx, y, size) {
+  const gap = size * 0.35;
+  const w = ctx.measureText(text).width + size + gap;
+  const x = cx - w / 2;
+  drawIcon(ctx, icon, x, y - size * 0.82, size, ctx.fillStyle, 2.4);
+  ctx.textAlign = 'left';
+  ctx.fillText(text, x + size + gap, y);
+  ctx.textAlign = 'center';
+}
 
 const W = 1080;
 const PAD = 48;
@@ -256,9 +268,7 @@ export async function renderRecap({ game, boards = [], thumbs, playersById, feat
   if (winner) {
     const em = await getEmblem(winnerId);
     if (em) ctx.drawImage(em, PAD + 30, by - 65, 130, 130);
-    ctx.font = '72px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('🏆', PAD + boardW - 85, by + 4);
-    ctx.textBaseline = 'alphabetic';
+    drawIcon(ctx, 'trophy', PAD + boardW - 121, by - 32, 72, INK, 2.4);
   }
   comicText(ctx, headline, bx + (winner ? 10 : 0), by + 36, headline.length > 14 ? 88 : 104, RED);
   y += H_WIN;
@@ -307,7 +317,9 @@ export async function renderRecap({ game, boards = [], thumbs, playersById, feat
     ctx.fillText(`${k + 1}`, PAD + 30, ry + 58);
     if (em) ctx.drawImage(em, PAD + 76, ry + 10, 68, 68);
     ctx.font = `900 40px ${BODY}`; ctx.fillStyle = INK;
-    ctx.fillText(`${p?.name || 'Someone'}${pid === winnerId ? ' 🏆' : ''}`, PAD + 164, ry + 56);
+    const nm = p?.name || 'Someone';
+    ctx.fillText(nm, PAD + 164, ry + 56);
+    if (pid === winnerId) drawIcon(ctx, 'trophy', PAD + 164 + ctx.measureText(nm).width + 12, ry + 24, 38, INK, 2.4);
     ctx.font = `700 30px ${BODY}`; ctx.fillStyle = '#6b6255'; ctx.textAlign = 'right';
     ctx.fillText(stats, PAD + boardW - 28, ry + 54);
     if (k < rows.length - 1) {
@@ -319,7 +331,7 @@ export async function renderRecap({ game, boards = [], thumbs, playersById, feat
 
   // footer
   ctx.font = `900 30px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'center';
-  ctx.fillText(`📸 ${plural(totalPhotos, 'photo')} snapped · ${plural(game.players.length, 'hunter')} · Game ${game.code}`, W / 2, H - 58);
+  iconLine(ctx, 'camera', `${plural(totalPhotos, 'photo')} snapped · ${plural(game.players.length, 'hunter')} · Game ${game.code}`, W / 2, H - 58, 34);
 
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
 }
@@ -416,8 +428,7 @@ export async function renderCollage({ games, playersById, onProgress }) {
     ctx.lineWidth = 6; ctx.strokeStyle = INK; roundRect(ctx, P, y, inner, h, 22); ctx.stroke();
     const em = await emblemImg(playersById[mvp]?.emblem);
     if (em) ctx.drawImage(em, P + 50, by - 90, 180, 180);
-    ctx.font = '120px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('🏆', P + inner - 130, by + 6); ctx.textBaseline = 'alphabetic';
+    drawIcon(ctx, 'trophy', P + inner - 190, by - 54, 120, INK, 2.4);
     comicText(ctx, `MVP: ${firstName(playersById[mvp]).toUpperCase()}`, bx, by + 20, 120, RED);
     ctx.font = `900 36px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'center';
     ctx.fillText(`${plural(stats[mvp].wins, 'win')} · ${plural(stats[mvp].found, 'find')} · ${plural(stats[mvp].photos, 'photo')}`, bx, by + 82);
@@ -491,7 +502,7 @@ export async function renderCollage({ games, playersById, onProgress }) {
 
   // footer
   ctx.font = `900 40px ${BODY}`; ctx.fillStyle = INK; ctx.textAlign = 'center';
-  ctx.fillText(`📸 ${plural(photos.length, 'photo')} · ${plural(sum('found'), 'find')} · ${plural(games.length, 'game')} · NYCC Photo Hunt`, CW / 2, H - 60);
+  iconLine(ctx, 'camera', `${plural(photos.length, 'photo')} · ${plural(sum('found'), 'find')} · ${plural(games.length, 'game')} · NYCC Photo Hunt`, CW / 2, H - 60, 44);
 
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
 }

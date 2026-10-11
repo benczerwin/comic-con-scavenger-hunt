@@ -3,6 +3,7 @@ import * as store from './store.js';
 import { EMBLEMS, emblemById, emblemSVG } from './data/emblems.js';
 import { CATEGORY_LABELS, ITEMS, itemKind, catLabel, normalizeItem } from './data/items.js';
 import * as G from './game.js';
+import { iconMarkup, iconSVG } from './icons.js';
 import { processPhoto } from './photo.js';
 import { renderRecap, renderCollage } from './recap.js';
 
@@ -44,6 +45,11 @@ function useNow(active) {
 }
 
 let pushToast = () => {};
+/** A flat line icon from icons.js, sized to the text around it unless size is given. */
+const Ico = ({ n, size }) => html`<svg class="ico" viewBox="0 0 24 24" style=${size ? `width:${size}px;height:${size}px` : undefined} fill="none" stroke="currentColor"
+  stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" dangerouslySetInnerHTML=${{ __html: iconMarkup(n) }} />`;
+const ic = (n, size) => html`<${Ico} n=${n} size=${size} />`;
+
 const toast = (msg, kind = 'info') => pushToast({ msg, kind, id: Math.random() });
 
 // Anything that fails without its own error handling still tells the player, instead of looking like a dead tap.
@@ -87,7 +93,7 @@ function Toasts() {
     setItems((xs) => [...xs, t]);
     setTimeout(() => setItems((xs) => xs.filter((x) => x.id !== t.id)), 3200);
   };
-  return html`<div class="toasts">${items.map((t) => html`<div class="toast ${t.kind}" key=${t.id}>${t.msg}</div>`)}</div>`;
+  return html`<div class="toasts">${items.map((t) => html`<div class="toast ${t.kind}" key=${t.id}>${t.kind === 'good' ? ic('check') : t.kind === 'error' ? ic('alert') : ''} ${t.msg}</div>`)}</div>`;
 }
 
 const svgCache = {};
@@ -143,7 +149,7 @@ const BANK_ID = 'itemBank';
 function blockItem(text) {
   return store.transact('settings', BANK_ID, (b) => ({
     ...(b || {}), custom: b?.custom || [], disabled: [...new Set([...(b?.disabled || []), text])], updatedAt: Date.now(),
-  })).then(() => toast(`🚫 Blocked "${text}". Turn it back on in Edit hunt items.`)).catch((e) => toast(`Couldn't block: ${e.message}`, 'error'));
+  })).then(() => toast(`Blocked "${text}". Turn it back on in Edit hunt items.`)).catch((e) => toast(`Couldn't block: ${e.message}`, 'error'));
 }
 
 async function uniqueCode() {
@@ -514,8 +520,8 @@ function HowToPlay() {
     <li><b>Empty board</b> (Crossover option): the board starts blank and everyone gets a hand of items (9 by default). Snap one, place it on any empty square, and you get a whole new hand. Pick your spots to block or build a line.</li>
     <li><b>Endless:</b> 1–3 items are up at a time. Snap one to score (★ = 1 pt, ★★ = 2, ★★★ = 3), then pick the difficulty and type of the next item. An item that sits while 2 others get found swaps itself out.</li>
     <li><b>Backups:</b> in Solo Series and Crossover you get 1–3 backup items. Tap a backup, then tap an unmarked square to swap it in.</li>
-    <li><b>🎲 Reroll:</b> swap an item you haven't found for a random one with the same stars. Rerolls are counted in the stats.</li>
-    <li><b>🚫 Block:</b> never want to see an item again? Block it. It's swapped out and turned off in Edit hunt items.</li>
+    <li><b>${ic('dice')} Reroll:</b> swap an item you haven't found for a random one with the same stars. Rerolls are counted in the stats.</li>
+    <li><b>${ic('ban')} Block:</b> never want to see an item again? Block it. It's swapped out and turned off in Edit hunt items.</li>
     <li><b>Stars:</b> ★ items are everywhere, ★★★ items are rare finds.</li>
     <li><b>Friends:</b> share the game code or link. Anyone can join mid-game.</li>
   </ul>`;
@@ -527,7 +533,7 @@ function SettingsScreen({ me }) {
       <nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>
       <h1 class="title">Settings</h1>
       <a class="panel items-link" href="#/items">
-        <span class="icon">📝</span>
+        <span class="icon">${ic('list', 26)}</span>
         <span class="grow"><b>Edit hunt items</b><small>${itemPool.length} items on · Turn ideas off or add your own</small></span>
         <span>›</span>
       </a>
@@ -639,7 +645,7 @@ function NewGame({ mode, me, players }) {
         <${Choice} value=${turnMode} onChange=${setTurnMode}
           options=${[['any', 'Anyone', 'First to snap an item gets the points'], ['turns', 'Take turns', 'Players go one at a time']]} />
         ${!hideStars && html`<h2>Starting difficulty</h2>
-        <${Choice} value=${tier} onChange=${setTier} options=${ENDLESS_TIERS} />
+        <${Choice} value=${tier} onChange=${setTier} options=${endlessTiers()} />
         <p class="muted small">Whoever snaps an item picks the difficulty and type of the one that replaces it.</p>`}
         <${RerollChoice} limit=${rerollLimit} setLimit=${setRerollLimit} />
       </section>` : html`<section class="panel">
@@ -754,24 +760,24 @@ const gameDetail = (g) => g.mode === 'endless' ? `${findCount(g)} find${findCoun
 const isDone = (g) => !!g.winner || (!!g.endsAt && Date.now() >= g.endsAt);
 const gameResult = (g, playersById) => {
   const w = g.winner && playersById[g.winner];
-  return w ? `🏆 ${w.name}` : g.winner === 'draw' ? '🤝 Draw' : g.winner === 'team' ? '🎉 Blacked out'
-    : g.winner === 'ended' ? '🏁 Ended' : isDone(g) ? "⏱ Time's up" : 'In progress';
+  return w ? html`${ic('trophy')} ${w.name}` : g.winner === 'draw' ? html`${ic('equal')} Draw` : g.winner === 'team' ? html`${ic('sparkles')} Blacked out`
+    : g.winner === 'ended' ? html`${ic('flag')} Ended` : isDone(g) ? html`${ic('clock')} Time's up` : 'In progress';
 };
 
 /** One game in a list. Pass href to make it a link, onClick/selected for picking. onDelete adds swipe-left Delete; onEnd/onRecap the swipe-right action. */
 function GameRow({ g, playersById, href, onClick, selected, onDelete, onEnd, onRecap }) {
   const body = html`
-    ${selected !== undefined && html`<span class="check-box">${selected ? '✓' : ''}</span>`}
+    ${selected !== undefined && html`<span class="check-box">${selected ? ic('check') : ''}</span>`}
     <span class="grow">
       <span class="gr-top"><b>${g.code}</b><span class="mode-label ${g.mode}">${modeTag(g)}</span>
-        ${isDone(g) ? html`<span class="status-tag done">✓ Done</span>` : html`<span class="status-tag live"><i></i>Live</span>`}</span>
+        ${isDone(g) ? html`<span class="status-tag done">${ic('check')}Done</span>` : html`<span class="status-tag live"><i></i>Live</span>`}</span>
       <small>${gameDetail(g)}</small>
       <small>${new Date(g.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · ${gameResult(g, playersById)}</small>
     </span>
     <span class="stack">${g.players.slice(0, 4).map((pid) => html`<${Emblem} id=${playersById[pid]?.emblem} size=${28} />`)}</span>`;
   const done = isDone(g);
   // Right swipe: End game on a live game, Game recap on a finished one.
-  const rightAction = !done ? onEnd && ['🏁', 'End game', onEnd] : onRecap && ['🖼️', 'Recap', onRecap];
+  const rightAction = !done ? onEnd && [ic('flag', 22), 'End game', onEnd] : onRecap && [ic('image', 22), 'Recap', onRecap];
   const swipe = useSwipeReveal(!!onDelete, !!rightAction);
   const card = html`<div class=${`game-card mode-${g.mode}${g.coop ? ' coop' : ''}${selected ? ' sel' : ''}${isDone(g) ? ' done' : ''}`}
       ref=${swipe.ref} onClickCapture=${swipe.guard}>
@@ -910,7 +916,7 @@ function CollageScreen({ me, playersById }) {
 
       <div class="collage-go">
         <button class="btn primary huge" disabled=${!chosen.length} onClick=${make}>
-          🧩 Make collage${chosen.length ? ` (${chosen.length})` : ''}</button>
+          ${ic('collage')} Make collage${chosen.length ? ` (${chosen.length})` : ''}</button>
       </div>
       ${recap && html`<${RecapModal} recap=${recap} code="collage" title="Mega collage" playersById=${playersById} onClose=${close} />`}
     </main>`;
@@ -936,11 +942,11 @@ function StatsScreen({ me, players, playersById, focus }) {
     return top && stats[top.id][key] ? top : null;
   };
   const awards = [
-    ['🏆', 'Most wins', most('wins'), 'wins'],
-    ['🔍', 'Most finds', most('found'), 'found'],
-    ['📸', 'Most photos', most('photos'), 'photos'],
-    ['💎', 'Rare hunter (★★★)', ranked.slice().sort((a, b) => stats[b.id].tiers.h - stats[a.id].tiers.h)[0], null],
-    ['🎲', 'Reroll addict', most('rerolls'), 'rerolls'],
+    [ic('trophy'), 'Most wins', most('wins'), 'wins'],
+    [ic('search'), 'Most finds', most('found'), 'found'],
+    [ic('camera'), 'Most photos', most('photos'), 'photos'],
+    [ic('gem'), 'Rare hunter (★★★)', ranked.slice().sort((a, b) => stats[b.id].tiers.h - stats[a.id].tiers.h)[0], null],
+    [ic('dice'), 'Reroll addict', most('rerolls'), 'rerolls'],
   ].filter(([, , p]) => p);
 
   return html`
@@ -1171,7 +1177,7 @@ function ItemsScreen({ bank }) {
             <button class="pill" onClick=${() => loadPreset(pr)}>${pr.name} <small>(${all.length - pr.disabled.length} on)</small></button>
             <button class="preset-x" aria-label=${`Delete ${pr.name}`} onClick=${() => deletePreset(pr)}>×</button>
           </span>`)}
-          <button class="pill" onClick=${savePreset}>💾 Save current</button>
+          <button class="pill" onClick=${savePreset}>${ic('save')} Save current</button>
         </div>
         <div class="row small">
           <span class="grow muted">${filtered.length} shown</span>
@@ -1216,7 +1222,7 @@ function Tile({ item, thumb, found, stamp, win, swapTarget, claimColor, onClick 
         <span class="icon">${item.icon}</span>
         <span class="txt">${item.text}</span>
         ${TIER_STARS[item.tier] && !found && html`<span class="stars">${TIER_STARS[item.tier]}</span>`}
-        ${found && html`<span class="check">✓</span>`}
+        ${found && html`<span class="check">${ic('check')}</span>`}
         ${found && stamp && html`<span class="stamp"><${Emblem} id=${stamp} size=${22} /></span>`}
       `}
     </button>`;
@@ -1226,7 +1232,7 @@ function Tile({ item, thumb, found, stamp, win, swapTarget, claimColor, onClick 
 function RerollPill({ game, n, show }) {
   if (!show || game.noSwaps) return null;
   const cap = rerollCap(game);
-  return html`<span class=${'reroll-pill' + (n >= cap ? ' out' : '')} title="Rerolls you've used this game">🎲 ${Number.isFinite(cap) ? `${n}/${cap}` : n} reroll${n === 1 && !Number.isFinite(cap) ? '' : 's'}</span>`;
+  return html`<span class=${'reroll-pill' + (n >= cap ? ' out' : '')} title="Rerolls you've used this game">${ic('dice')} ${Number.isFinite(cap) ? `${n}/${cap}` : n} reroll${n === 1 && !Number.isFinite(cap) ? '' : 's'}</span>`;
 }
 
 function Board({ size, children }) {
@@ -1334,21 +1340,21 @@ function CameraView({ onFile, onClose, onFallback }) {
       ${!ready && !shot && !error && html`<div class="camera-msg"><div class="spinner"></div>Starting camera…</div>`}
       ${error && html`<div class="camera-msg">
         <p>${error}</p>
-        <button class="btn primary" onClick=${() => { stop(); onClose(); onFallback(); }}>📱 Use phone camera</button>
+        <button class="btn primary" onClick=${() => { stop(); onClose(); onFallback(); }}>${ic('phone')} Use phone camera</button>
       </div>`}
-      <button class="cam-btn cam-close" onClick=${() => { stop(); onClose(); }} aria-label="Close camera">✕</button>
+      <button class="cam-btn cam-close" onClick=${() => { stop(); onClose(); }} aria-label="Close camera">${ic('x')}</button>
       ${shot && html`<button class=${'cam-pill' + (save ? ' on' : '')} onClick=${toggleSave}
-        aria-pressed=${save}>${save ? '✓ Save to Photos' : 'Save to Photos'}</button>`}
+        aria-pressed=${save}>${save ? html`${ic('check')} Save to Photos` : 'Save to Photos'}</button>`}
       ${!shot && !error && html`<button class=${'cam-pill cam-wide' + (wide ? ' on' : '')} onClick=${() => setWide(!wide)}
         aria-pressed=${wide}>${wide ? '⤡ Wide' : '⤢ Normal'}</button>`}
       <div class="camera-bar">
         ${shot ? html`
-          <button class="btn ghost cam-retake" style="color:#141414;background:#fff" onClick=${retake}>↺ Retake</button>
-          <button class="btn primary" onClick=${use}>✓ Use photo</button>
+          <button class="btn ghost cam-retake" style="color:#141414;background:#fff" onClick=${retake}>${ic('undo')} Retake</button>
+          <button class="btn primary" onClick=${use}>${ic('check')} Use photo</button>
         ` : html`
           <span class="cam-spacer"></span>
           <button class="shutter" onClick=${snap} disabled=${!ready} aria-label="Take photo"><span></span></button>
-          <button class="cam-btn" onClick=${() => setFacing(facing === 'user' ? 'environment' : 'user')} aria-label="Flip camera">🔄</button>
+          <button class="cam-btn" onClick=${() => setFacing(facing === 'user' ? 'environment' : 'user')} aria-label="Flip camera">${ic('flip')}</button>
         `}
       </div>
     </div>`;
@@ -1387,10 +1393,10 @@ function PhotoButtons({ onFile, label = 'Take photo' }) {
   return html`
     <div class="photo-btns">
       ${hasLiveCamera
-        ? html`<button class="btn primary huge" onClick=${() => setCamera(true)}>📸 ${label}</button>`
-        : html`<label class="btn primary huge">📸 ${label}
+        ? html`<button class="btn primary huge" onClick=${() => setCamera(true)}>${ic('camera')} ${label}</button>`
+        : html`<label class="btn primary huge">${ic('camera')} ${label}
             <input type="file" accept="image/*" capture=${capture} onChange=${handle} hidden /></label>`}
-      <label class="btn ghost">🖼️ From iPhone
+      <label class="btn ghost">${ic('image')} From iPhone
         <input type="file" accept="image/*" onChange=${handle} hidden /></label>
       ${hasLiveCamera && html`<input ref=${nativeRef} type="file" accept="image/*" capture=${capture} onChange=${handle} hidden />`}
       ${camera && html`<${CameraView} onFile=${onFile} onClose=${() => setCamera(false)}
@@ -1532,7 +1538,7 @@ function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel,
             ${by && html`<figcaption><${Emblem} id=${by.emblem} size=${22} /> ${by.name}
               ${at && html`<span class="muted"> · ${new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>`}</figcaption>`}
           </figure>`}
-        ${found && !photoId && html`<p class="found-note">✅ Found${by ? html` by <${Emblem} id=${by.emblem} size=${22} /> ${by.name}` : ''}, no photo
+        ${found && !photoId && html`<p class="found-note">${ic('checkCircle')} Found${by ? html` by <${Emblem} id=${by.emblem} size=${22} /> ${by.name}` : ''}, no photo
           ${at && html`<span class="muted"> · ${new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>`}</p>`}
         ${note && html`<p class="muted center">${note}</p>`}
         ${editing ? html`<${ItemForm} initial=${item} submitLabel="Save square" compact
@@ -1540,11 +1546,11 @@ function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel,
           : canAct && html`<${PhotoButtons} label=${actionLabel} onFile=${wrap(onFile)} />`}
         ${onRemove && html`<button class="btn small danger" onClick=${wrap(onRemove)}>${removeLabel || 'Remove photo'}</button>`}
         ${!editing && html`<${IconTools} tools=${[
-          canAct && onNoPhoto && ['✅', 'No photo', wrap(onNoPhoto)],
-          onReroll && ['🎲', `Reroll${rerolls ? ` (${rerolls})` : ''}`, onReroll],
-          onEdit && ['✏️', 'Edit', () => setEditing(true)],
-          onBlock && ['🚫', 'Block', () => confirmBlock(item.text) && onBlock()],
-          photoId && full && ['💾', 'Save photo', () => saveDataUrl(full, item.text)],
+          canAct && onNoPhoto && [ic('checkCircle', 22), 'No photo', wrap(onNoPhoto)],
+          onReroll && [ic('dice', 22), `Reroll${rerolls ? ` (${rerolls})` : ''}`, onReroll],
+          onEdit && [ic('pencil', 22), 'Edit', () => setEditing(true)],
+          onBlock && [ic('ban', 22), 'Block', () => confirmBlock(item.text) && onBlock()],
+          photoId && full && [ic('download', 22), 'Save photo', () => saveDataUrl(full, item.text)],
         ]} />`}
         ${busy && html`<div class="busy"><div class="spinner"></div>Uploading…</div>`}
       </div>
@@ -1563,10 +1569,10 @@ async function uploadPhoto(file, gameId, by) {
 function Confetti() {
   const bits = useMemo(() => Array.from({ length: 36 }, (_, i) => ({
     left: Math.random() * 100, delay: Math.random() * 0.8, dur: 2 + Math.random() * 1.5,
-    ch: ['💥', '⭐', '⚡', '🎉', '✨', '🦸'][i % 6],
+    shape: ['sq', 'ci', 'strip'][i % 3], color: ['var(--red)', 'var(--yellow)', '#7fb2ff', '#8ce99a', '#c9a7ff'][i % 5],
   })), []);
   return html`<div class="confetti">${bits.map((b) => html`
-    <span style=${`left:${b.left}%;animation-delay:${b.delay}s;animation-duration:${b.dur}s`}>${b.ch}</span>`)}</div>`;
+    <span class=${b.shape} style=${`left:${b.left}%;background:${b.color};animation-delay:${b.delay}s;animation-duration:${b.dur}s`}></span>`)}</div>`;
 }
 
 function WinBanner({ text, sub, onRematch }) {
@@ -1574,7 +1580,7 @@ function WinBanner({ text, sub, onRematch }) {
     <div class="pow">${text}</div>
     ${sub && html`<p>${sub}</p>`}
     <div class="row center-row">
-      <button class="btn small primary" onClick=${() => dispatchEvent(new Event('nycc:recap'))}>🖼️ Game recap</button>
+      <button class="btn small primary" onClick=${() => dispatchEvent(new Event('nycc:recap'))}>${ic('image')} Game recap</button>
       ${onRematch && html`<button class="btn small" onClick=${onRematch}>Rematch</button>`}
     </div>
   </div>`;
@@ -1604,8 +1610,8 @@ function RecapModal({ recap, code, playersById, onFeature, onClose, title = 'Gam
           </button>`)}
         </div>`}
         ${recap.url && html`<div class="recap-actions">
-          ${canShare && html`<button class="btn primary" onClick=${share}>📤 Save or share</button>`}
-          <a class="btn ghost" href=${recap.url} download=${`nycc-hunt-${code}.${ext}`}>⬇️ Download</a>
+          ${canShare && html`<button class="btn primary" onClick=${share}>${ic('share')} Save or share</button>`}
+          <a class="btn ghost" href=${recap.url} download=${`nycc-hunt-${code}.${ext}`}>${ic('download')} Download</a>
         </div>`}
         </div>
         ${recap.url ? html`
@@ -1718,7 +1724,7 @@ function GameScreen({ code, me, playersById }) {
         <span class="topbar-right">
           ${isPlayer && html`<button class="cam-chip" onClick=${() => pickFacing(facing === 'user' ? 'environment' : 'user')}
             title="Camera opens to (tap to switch)" aria-label=${`Camera opens to ${facing === 'user' ? 'selfie' : 'back'} camera. Tap to switch.`}>
-            ${facing === 'user' ? '🤳 Selfie' : '📷 Back'}</button>`}
+            ${facing === 'user' ? html`${ic('user')} Selfie` : html`${ic('camera')} Back`}</button>`}
           <button class="code-chip" onClick=${share}>Code <b>${code}</b> · Share</button>
         </span>
       </nav>
@@ -1729,9 +1735,9 @@ function GameScreen({ code, me, playersById }) {
         <${Screen} key=${isPlayer ? 'player' : 'watcher'} game=${game} me=${me} playersById=${playersById} thumbs=${thumbs} isPlayer=${isPlayer} onRematch=${rematch} />
       <//>
       <div class="game-footer">
-        ${isDone(game) ? html`<button class="btn small" onClick=${() => recapThis()}>🖼️ Game recap</button>`
-          : isPlayer && html`<button class="btn small" onClick=${() => endGameEarly(game)}>🏁 End game</button>`}
-        <button class="btn small danger" onClick=${async () => { if (await confirmDelete(code)) go('/'); }}>🗑️ Delete game</button>
+        ${isDone(game) ? html`<button class="btn small" onClick=${() => recapThis()}>${ic('image')} Game recap</button>`
+          : isPlayer && html`<button class="btn small" onClick=${() => endGameEarly(game)}>${ic('flag')} End game</button>`}
+        <button class="btn small danger" onClick=${async () => { if (await confirmDelete(code)) go('/'); }}>${ic('trash')} Delete game</button>
       </div>
       ${recap && html`<${RecapModal} recap=${recap} code=${code} playersById=${playersById} onFeature=${recapThis} onClose=${closeRecap} />`}
     </main>`;
@@ -1810,8 +1816,8 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         if (!g || g.winner) return undefined;
         return { ...g, winner: me.id, wonAt: Date.now() };
       }).catch(() => {});
-    } else if (after.lines > before.lines) toast('LINE! 💥', 'good');
-    else toast(photo ? 'Got it! 📸' : 'Got it! ✅', 'good');
+    } else if (after.lines > before.lines) toast('LINE!', 'good');
+    else toast('Got it!', 'good');
   };
 
   const editSquare = (it) => {
@@ -1853,7 +1859,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     <div class="game-info">
       <span>${game.size}×${game.size} · ${G.WIN_RULES[game.winRule]?.label}${diffTag(game)}${mixTag(game)}${tiersTag(game)}</span>
       <span class="info-right">
-        ${game.endsAt && html`<span class="timer ${timeUp ? 'over' : ''}">⏱ ${timeUp ? "Time's up!" : G.fmtDuration(game.endsAt - now)}</span>`}
+        ${game.endsAt && html`<span class="timer ${timeUp ? 'over' : ''}">${ic('clock')} ${timeUp ? "Time's up!" : G.fmtDuration(game.endsAt - now)}</span>`}
         <${RerollPill} game=${game} n=${ordered.find((b) => b.playerId === me.id)?.rerolls || 0} show=${ordered.some((b) => b.playerId === me.id)} />
       </span>
     </div>
@@ -1868,8 +1874,8 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         const s = scores[b.playerId];
         return html`<button class="score ${viewing === b.playerId ? 'sel' : ''}" key=${b.playerId} onClick=${() => { setViewing(b.playerId); setSwapIdx(null); }}>
           <${Emblem} id=${p?.emblem} size=${34} />
-          <span class="nm">${b.playerId === me.id ? 'You' : firstName(p)}${winnerId === b.playerId ? ' 🏆' : ''}</span>
-          <span class="pts">${s.found} found · ${s.lines} line${s.lines === 1 ? '' : 's'}${game.winRule === 'most' ? ` · ${s.points}pt` : ''}${b.rerolls ? ` · 🎲${b.rerolls}` : ''}</span>
+          <span class="nm">${b.playerId === me.id ? 'You' : firstName(p)}${winnerId === b.playerId ? html` ${ic('trophy')}` : ''}</span>
+          <span class="pts">${s.found} found · ${s.lines} line${s.lines === 1 ? '' : 's'}${game.winRule === 'most' ? ` · ${s.points}pt` : ''}${b.rerolls ? html` · ${ic('dice')}${b.rerolls}` : ''}</span>
         </button>`;
       })}
     </div>
@@ -1903,7 +1909,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 }
 
 const PLACEHOLDER = 'data:image/svg+xml,' + encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ddd"/><text x="5" y="6.5" font-size="4" text-anchor="middle">📸</text></svg>');
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ddd"/><g transform="translate(3.25 3.25)">' + iconSVG('camera', '#999', 3.5) + '</g></svg>');
 
 function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
   const [swapIdx, setSwapIdx] = useState(null);
@@ -1953,7 +1959,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         return g;
       });
       setOpen(null);
-      return toast('Photo added 📸', 'good');
+      return toast('Photo added', 'good');
     }
     let res;
     try {
@@ -1984,8 +1990,8 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       toast(c ? (game.coop ? `${who} already found that one!` : `Too slow! ${who} got it first.`) : 'Game is over!', c && game.coop ? 'info' : 'error');
     } else if (game.coop && !res.data.winner) {
       const left = game.size * game.size - Object.keys(res.data.claims).length;
-      toast(`Found it! ${left} to go 💪`, 'good');
-    } else if (res.data.winner !== me.id && !game.coop) toast('Claimed! 🚩', 'good');
+      toast(`Found it! ${left} to go`, 'good');
+    } else if (res.data.winner !== me.id && !game.coop) toast('Claimed!', 'good');
   };
 
   const editSquare = async (it) => {
@@ -2043,7 +2049,7 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     <div class="game-info"><span>${game.size}×${game.size} · ${coop ? 'Co-op: black out the board' : `${game.connect} in a row wins`}${diffTag(game)}${mixTag(game)}${tiersTag(game)}</span><${RerollPill} game=${game} n=${game.rerolls?.[me.id] || 0} show=${isPlayer} /></div>
     ${over && html`<${WinBanner}
       text=${game.winner === 'ended' ? 'GAME OVER' : game.winner === 'team' ? 'TEAM BLACKOUT!' : game.winner === 'draw' ? "IT'S A DRAW!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
-      sub=${game.endedEarly ? (coop ? 'Game ended early.' : 'Game ended early: most squares wins.') : coop ? `All ${total} squares found together. 🎉` : !winLine && game.winner !== 'draw' ? 'Board full: most squares wins.' : null}
+      sub=${game.endedEarly ? (coop ? 'Game ended early.' : 'Game ended early: most squares wins.') : coop ? `All ${total} squares found together!` : !winLine && game.winner !== 'draw' ? 'Board full: most squares wins.' : null}
       onRematch=${onRematch} />`}
 
     ${coop && html`<div class="team-progress">
@@ -2055,8 +2061,8 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         const p = playersById[pid];
         return html`<div class="score versus" key=${pid} style=${`--claim:${playerColor(p)}`}>
           <${Emblem} id=${p?.emblem} size=${34} />
-          <span class="nm">${pid === me.id ? 'You' : firstName(p)}${game.winner === pid ? ' 🏆' : ''}</span>
-          <span class="pts">${counts[pid] || 0} ${coop ? 'found' : 'claimed'}${game.rerolls?.[pid] ? ` · 🎲${game.rerolls[pid]}` : ''}</span>
+          <span class="nm">${pid === me.id ? 'You' : firstName(p)}${game.winner === pid ? html` ${ic('trophy')}` : ''}</span>
+          <span class="pts">${counts[pid] || 0} ${coop ? 'found' : 'claimed'}${game.rerolls?.[pid] ? html` · ${ic('dice')}${game.rerolls[pid]}` : ''}</span>
         </div>`;
       })}
     </div>
@@ -2200,7 +2206,7 @@ function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     <div class="game-info"><span>${game.size}×${game.size} · Empty board · ${coop ? 'Co-op: fill the board' : `${game.connect} in a row wins`}${mixTag(game)}${tiersTag(game)}</span><${RerollPill} game=${game} n=${game.rerolls?.[me.id] || 0} show=${isPlayer} /></div>
     ${over && html`<${WinBanner}
       text=${game.winner === 'ended' ? 'GAME OVER' : game.winner === 'team' ? 'TEAM BLACKOUT!' : game.winner === 'draw' ? "IT'S A DRAW!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
-      sub=${game.endedEarly ? (coop ? 'Game ended early.' : 'Game ended early: most squares wins.') : coop ? `All ${total} squares filled together. 🎉` : !winLine && game.winner !== 'draw' ? 'Board full: most squares wins.' : null}
+      sub=${game.endedEarly ? (coop ? 'Game ended early.' : 'Game ended early: most squares wins.') : coop ? `All ${total} squares filled together!` : !winLine && game.winner !== 'draw' ? 'Board full: most squares wins.' : null}
       onRematch=${onRematch} />`}
     ${coop && html`<div class="team-progress">
       <div class="bar"><span style=${`width:${(placed / total) * 100}%`}></span></div>
@@ -2211,14 +2217,14 @@ function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         const p = playersById[pid];
         return html`<div class="score versus" key=${pid} style=${`--claim:${playerColor(p)}`}>
           <${Emblem} id=${p?.emblem} size=${34} />
-          <span class="nm">${name(pid)}${game.winner === pid ? ' 🏆' : ''}</span>
-          <span class="pts">${counts[pid] || 0} placed${game.pending?.[pid] ? ' · 📸 1 ready' : ''}</span>
+          <span class="nm">${name(pid)}${game.winner === pid ? html` ${ic('trophy')}` : ''}</span>
+          <span class="pts">${counts[pid] || 0} placed${game.pending?.[pid] ? html` · ${ic('camera')} 1 ready` : ''}</span>
         </div>`;
       })}
     </div>
 
     ${pending && !over && html`<div class="banner place-banner">
-      <span class="grow">📍 Tap an empty square to place <b>${pending.item.text}</b></span>
+      <span class="grow">${ic('pin')} Tap an empty square to place <b>${pending.item.text}</b></span>
       <button class="btn small ghost" onClick=${unpend}>Put back</button>
     </div>`}
 
@@ -2226,7 +2232,7 @@ function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       ${game.items.map((item, i) => {
         const c = game.claims?.[i];
         if (!item || !c) return html`<button class=${'tile empty' + (pending && !over ? ' swap-target' : '')} key=${i} onClick=${() => tapSquare(i)}
-          aria-label="Empty square"><span class="plus">${pending && !over ? '📍' : '+'}</span></button>`;
+          aria-label="Empty square"><span class="plus">${pending && !over ? ic('pin') : '+'}</span></button>`;
         const p = playersById[c.by];
         return html`<${Tile} key=${i} item=${item} thumb=${c.photo && (thumbs[c.photo]?.thumb || PLACEHOLDER)} found=${true}
           stamp=${p?.emblem} claimColor=${p && playerColor(p)} win=${winCells.has(i)} onClick=${() => tapSquare(i)} />`;
@@ -2236,7 +2242,7 @@ function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     ${isPlayer && !over && html`<section class="hand">
       <div class="hand-head">
         <h3>Your hand <small>${pending ? '· place your find first' : '· tap one to snap it'}</small></h3>
-        ${canReroll(game, game.rerolls?.[me.id]) && html`<button class="btn small ghost" disabled=${!!pending} onClick=${rerollHand}>🎲 Reroll hand</button>`}
+        ${canReroll(game, game.rerolls?.[me.id]) && html`<button class="btn small ghost" disabled=${!!pending} onClick=${rerollHand}>${ic('dice')} Reroll hand</button>`}
       </div>
       <div class="hand-grid">
         ${hand.map((it, idx) => html`<button class=${`hand-card cat-${it.cat}`} key=${it.text} disabled=${!!pending} onClick=${() => setHandIdx(idx)}>
@@ -2258,7 +2264,7 @@ function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 // ───────────────────────── endless ─────────────────────────
 
 const findCount = (g) => (g.history || []).filter(G.isFind).length;
-const ENDLESS_TIERS = [['any', '🎲', 'Surprise'], ['e', '★', '1 pt'], ['m', '★★', '2 pts'], ['h', '★★★', '3 pts']];
+const endlessTiers = () => [['any', ic('dice'), 'Surprise'], ['e', '★', '1 pt'], ['m', '★★', '2 pts'], ['h', '★★★', '3 pts']];
 
 function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
   const [open, setOpen] = useState(null); // history index being viewed
@@ -2312,7 +2318,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     });
     setSnapId(null);
     if (!res.ok) return toast(turns ? "It's not your turn." : 'Someone got that one first!', 'error');
-    toast(`+${pts(slot.item)} pt${pts(slot.item) === 1 ? '' : 's'}! 🎉`, 'good');
+    toast(`+${pts(slot.item)} pt${pts(slot.item) === 1 ? '' : 's'}!`, 'good');
   };
 
   const usedTexts = (g, s2) => [...(g.history || []).map((h) => h.item.text), ...s2.active.filter((x) => x.item).map((x) => x.item.text)];
@@ -2369,15 +2375,15 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         const sc = scores[pid] || { points: 0, finds: 0 };
         return html`<div class=${'score' + (turns && pid === st.turn && !over ? ' sel' : '')} key=${pid}>
           <${Emblem} id=${p?.emblem} size=${34} />
-          <span class="nm">${name(pid)}${game.winner === pid ? ' 🏆' : ''}</span>
-          <span class="pts">${sc.points} pt${sc.points === 1 ? '' : 's'} · ${sc.finds} found${game.rerolls?.[pid] ? ` · 🎲${game.rerolls[pid]}` : ''}</span>
+          <span class="nm">${name(pid)}${game.winner === pid ? html` ${ic('trophy')}` : ''}</span>
+          <span class="pts">${sc.points} pt${sc.points === 1 ? '' : 's'} · ${sc.finds} found${game.rerolls?.[pid] ? html` · ${ic('dice')}${game.rerolls[pid]}` : ''}</span>
         </div>`;
       })}
     </div>
 
     ${!over && html`
-      <p class="turn-line">${!turns ? (isPlayer ? '⚡ Anyone can snap. First one gets it!' : 'Anyone in the game can snap.')
-        : st.turn === me.id ? '🎯 Your turn!' : html`<${Emblem} id=${playersById[st.turn]?.emblem} size=${22} /> ${name(st.turn)}'s turn`}</p>
+      <p class="turn-line">${!turns ? (isPlayer ? html`${ic('zap')} Anyone can snap. First one gets it!` : 'Anyone in the game can snap.')
+        : st.turn === me.id ? html`${ic('target')} Your turn!` : html`<${Emblem} id=${playersById[st.turn]?.emblem} size=${22} /> ${name(st.turn)}'s turn`}</p>
       <div class=${'endless-slots' + (single ? ' single' : '')}>
         ${st.active.map((slot) => slot.pick
           ? html`<${PickSlot} key=${slot.id} slot=${slot} game=${game} me=${me} isPlayer=${isPlayer} name=${name} onDeal=${deal} />`
@@ -2391,9 +2397,9 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
             ${canSnap && (single ? html`<div class="endless-actions">
               <${PhotoButtons} label="Snap it" onFile=${(f) => capture(slot, f).catch((e) => toast(e.message, 'error'))} />
               <${IconTools} tools=${[
-                ['✅', 'No photo', () => capture(slot, null).catch((e) => toast(e.message, 'error'))],
-                canReroll(game, game.rerolls?.[me.id]) && ['🎲', `Reroll${game.rerolls?.[me.id] ? ` (${game.rerolls[me.id]})` : ''}`, () => reroll(slot)],
-                ['🚫', 'Block', () => confirmBlock(slot.item.text) && block(slot)],
+                [ic('checkCircle', 22), 'No photo', () => capture(slot, null).catch((e) => toast(e.message, 'error'))],
+                canReroll(game, game.rerolls?.[me.id]) && [ic('dice', 22), `Reroll${game.rerolls?.[me.id] ? ` (${game.rerolls[me.id]})` : ''}`, () => reroll(slot)],
+                [ic('ban', 22), 'Block', () => confirmBlock(slot.item.text) && block(slot)],
               ]} />
             </div>` : html`<${QuickSnap} onFile=${(f) => capture(slot, f).catch((e) => toast(e.message, 'error'))} />`)}
           </div>`)}
@@ -2408,7 +2414,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
           const found = G.isFind(h);
           const who = h.by ? html`<${Emblem} id=${playersById[h.by]?.emblem} size=${16} /> ${name(h.by)} · ` : '';
           const what = found ? `${TIER_STARS[h.item.tier]} +${pts(h.item)}`
-            : h.rerolled ? '🎲 Rerolled' : h.blocked ? '🚫 Blocked' : h.expired ? `⌛ Swapped out after ${G.ENDLESS_EXPIRE_AFTER} other finds` : 'Skipped';
+            : h.rerolled ? html`${ic('dice')} Rerolled` : h.blocked ? html`${ic('ban')} Blocked` : h.expired ? html`${ic('hourglass')} Swapped out after ${G.ENDLESS_EXPIRE_AFTER} other finds` : 'Skipped';
           return html`<button class=${'hist-row' + (found ? '' : ' skipped')} key=${h.i} onClick=${() => found && setOpen(h.i)}>
             ${h.photo && thumbs[h.photo] ? html`<img src=${thumbs[h.photo].thumb} alt="" />` : html`<span class=${`hist-icon cat-${h.item.cat}`}>${h.item.icon}</span>`}
             <span class="grow"><b>${h.item.text}</b><small>${who}${what}</small></span>
@@ -2440,7 +2446,7 @@ function PickSlot({ slot, game, me, isPlayer, name, onDeal }) {
     ${isPlayer ? html`
       ${!mine && html`<p class="muted small">Anyone can pick if they're busy.</p>`}
       ${!hideStars && html`<h3>Difficulty</h3>
-      <${Choice} value=${tier} onChange=${setTier} options=${ENDLESS_TIERS} />`}
+      <${Choice} value=${tier} onChange=${setTier} options=${endlessTiers()} />`}
       <h3>Categories</h3>
       <${CatPicker} value=${cats} onChange=${setCats} />
       <button class="btn primary huge" disabled=${!cats.length} onClick=${() => onDeal(slot, hideStars ? 'any' : tier, someCats(cats) || null)}>
