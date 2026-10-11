@@ -533,7 +533,10 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .endless-slots:has(.quick) { gap: var(--s3); }
 .endless-slot.quick { display: flex; align-items: center; gap: var(--s3); }
 .endless-slot.quick .endless-card { flex: 1; min-width: 0; }
-.quick-btns { flex: none; display: flex; flex-direction: column; gap: var(--s2); }
+.endless-slot.quick .endless-card.compact { padding: var(--s3) 26px var(--s3) var(--s3); column-gap: 10px; }
+.endless-slot.quick .endless-card.compact .icon { font-size: 2rem; }
+.endless-slot.quick .endless-card.compact h2 { font-size: 1.1rem; }
+.quick-btns { flex: none; display: flex; gap: var(--s2); }
 .quick-btn { width: 46px; height: 46px; display: grid; place-items: center; border: 3px solid var(--ink); border-radius: 50%;
   background: #fff; font-size: 1.25rem; box-shadow: 2px 2px 0 var(--ink); cursor: pointer; padding: 0; }
 .quick-btn.snap { background: var(--red); }
