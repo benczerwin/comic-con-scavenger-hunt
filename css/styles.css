@@ -553,6 +553,9 @@ button.badge { border: 0; font: inherit; font-weight: 800; font-size: 0.65rem; l
 .endless-card h2 { font-family: var(--display); font-size: 2rem; letter-spacing: 1px; margin: var(--s3) 0 var(--s1); line-height: 1.1; }
 .endless-card small { font-weight: 800; color: rgba(0,0,0,0.6); }
 .endless-card .stars { position: absolute; top: 8px; right: 12px; font-size: 1.1rem; color: rgba(0,0,0,0.55); }
+.life { position: absolute; left: 50%; bottom: 7px; transform: translateX(-50%); display: flex; gap: 4px; }
+.life i { width: 14px; height: 4px; border-radius: 2px; background: rgba(0,0,0,0.15); }
+.life i.on { background: var(--ink); }
 .pick-panel { margin: 0; }
 .pick-panel h2 { margin-bottom: var(--s1); }
 .endless-history { display: flex; flex-direction: column; gap: var(--s2); }
@@ -599,7 +602,7 @@ button.badge { border: 0; font: inherit; font-weight: 800; font-size: 0.65rem; l
 .endless-slot.quick { display: flex; align-items: stretch; gap: var(--s3); }
 .endless-slot.quick .quick-btns { align-self: center; }
 .endless-slot.quick .endless-card { flex: 1; min-width: 0; }
-.endless-slot.quick .endless-card.compact { padding: var(--s3) 40px var(--s3) var(--s3); column-gap: 10px; align-content: center; }
+.endless-slot.quick .endless-card.compact { padding: var(--s3) 40px 22px var(--s3); column-gap: 10px; align-content: center; }
 .endless-slot.quick .endless-card.compact .icon { font-size: 2rem; }
 .endless-slot.quick .endless-card.compact h2 { font-size: 1.1rem; }
 .quick-btns { flex: none; display: flex; gap: var(--s2); }

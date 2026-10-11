@@ -269,7 +269,7 @@ export const ENDLESS_POINTS = { e: 1, m: 2, h: 3 };
 /** Endless history also logs items that left the board without being found (rerolled, swapped out, skipped). */
 export const isFind = (h) => !h.skipped && !h.rerolled && !h.expired && !h.blocked;
 /** An active item is swapped out automatically once this many other items get found while it's up. */
-export const ENDLESS_EXPIRE_AFTER = 2;
+export const ENDLESS_EXPIRE_AFTER = 3; // shown as that many little bars on each card
 
 /** { pid: { points, finds, photos, skips } } for every player in an endless game. */
 export function endlessScores(game) {
