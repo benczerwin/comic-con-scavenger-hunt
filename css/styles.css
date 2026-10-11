@@ -695,6 +695,9 @@ button.badge { border: 0; font: inherit; font-weight: 800; font-size: 0.65rem; l
 .multi-opt { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); font-weight: 700; white-space: nowrap; border-radius: 8px; }
 .multi-opt input { width: 20px; height: 20px; accent-color: var(--red); flex: none; }
 .multi-opt:active { background: #fff3bf; }
+.multi-opt.single { width: 100%; border: 0; background: none; font: inherit; font-weight: 700; color: var(--ink); text-align: left; cursor: pointer; }
+.multi-opt.single.sel { background: #fff3bf; }
+.multi-opt .tick { width: 20px; display: grid; place-items: center; color: var(--red); flex: none; }
 .game-filters .small-select { flex: 1; min-width: 0; padding: var(--s2) 36px var(--s2) var(--s3); font-size: 0.95rem; }
 .how-list { padding-left: 18px; margin: 0; }
 .how-list li { margin-bottom: var(--s2); line-height: 1.4; }

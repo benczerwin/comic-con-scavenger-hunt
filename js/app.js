@@ -554,6 +554,28 @@ function DateMulti({ days, value, onChange }) {
   </div>`;
 }
 
+/** Single-choice dropdown in the same style as the filter dropdowns (the native picker looks out of place). */
+function SingleSelect({ options, value, onChange, placeholder, label }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [open]);
+  const cur = options.find((o) => o.value === value);
+  return html`<div class="multi-select" ref=${ref}>
+    <button type="button" class="text small-select multi-btn" aria-expanded=${open} aria-label=${label} onClick=${() => setOpen(!open)}>
+      ${cur ? cur.label : placeholder}</button>
+    ${open && html`<div class="multi-pop" role="listbox">
+      ${options.map((o) => html`<button type="button" role="option" aria-selected=${o.value === value} key=${o.value}
+        class=${'multi-opt single' + (o.value === value ? ' sel' : '')} onClick=${() => { setOpen(false); onChange(o.value); }}>
+        <span class="tick">${o.value === value ? ic('check') : ''}</span>${o.label}</button>`)}
+    </div>`}
+  </div>`;
+}
+
 /** Pick any number of players (none picked = everyone). value: array of player ids. */
 function PlayerMulti({ people, value, onChange, me, playersById }) {
   const [open, setOpen] = useState(false);
@@ -754,11 +776,8 @@ function NewGame({ mode, me, players }) {
       <nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>
       <h1 class="title">${isBingo ? 'New Solo Series' : isEndless ? 'New Endless Hunt' : 'New Crossover'}</h1>
       ${modePresets.length > 0 && html`<div class="row game-filters preset-row">
-        <select class="text small-select" value=${presetId} aria-label="Presets"
-          onChange=${(e) => applyPreset(e.target.value)}>
-          <option value="">Choose a preset…</option>
-          ${modePresets.map((p) => html`<option value=${p.id}>${p.name}</option>`)}
-        </select>
+        <${SingleSelect} label="Presets" placeholder="Choose a preset…" value=${presetId} onChange=${applyPreset}
+          options=${modePresets.map((p) => ({ value: p.id, label: p.name }))} />
         ${presetId && html`<button class="preset-del" aria-label="Delete preset" onClick=${deletePreset}>${ic('trash')}</button>`}
       </div>`}
 
