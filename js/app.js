@@ -1290,7 +1290,7 @@ function PlayerStats({ p, s, me, playersById, note }) {
 
 const TIER_LABELS = { e: 'Easy', m: 'Medium', h: 'Hard' };
 
-function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compact }) {
+function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compact, extra }) {
   const [icon, setIcon] = useState(itemIconName(initial?.icon) || 'camera');
   const [picking, setPicking] = useState(false);
   const [mine, setMine] = useState(initial ? initial.mine !== false : true);
@@ -1324,6 +1324,7 @@ function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compa
       ${!compact && html`<label class="toggle mine-toggle"><input type="checkbox" checked=${mine} onChange=${(e) => setMine(e.target.checked)} />
         <span>Mark as mine <small>(adds it to your list and the Mine filter)</small></span></label>`}
       <div class="row end">
+        ${extra && html`<span class="form-extra">${extra}</span>`}
         ${onCancel && html`<button type="button" class="btn ghost small" onClick=${onCancel}>Cancel</button>`}
         <button class="btn primary small">${submitLabel}</button>
       </div>
@@ -1340,12 +1341,12 @@ function ItemEditSheet({ item, onSave, onClose, onReset, onDelete, archived, onA
       <button class="x" onClick=${onClose} aria-label="Close">×</button>
       <h2 class="sheet-title">Edit item</h2>
       ${(item.orig || used !== null) && html`<p class="muted small">${item.orig ? `Originally "${item.orig}". ` : ''}${used !== null ? `Used in games ${used} time${used === 1 ? '' : 's'}.` : ''}</p>`}
-      <${ItemForm} initial=${{ ...item, mine: isMine(item) }} submitLabel="Save changes" onSubmit=${onSave} onCancel=${onClose} />
-      <div class="row center-row sheet-actions">
-        <button class="btn small ghost" onClick=${() => onArchive(!archived)}>${ic('archive')} ${archived ? 'Unarchive' : 'Archive'}</button>
+      <${ItemForm} initial=${{ ...item, mine: isMine(item) }} submitLabel="Save changes" onSubmit=${onSave} onCancel=${onClose}
+        extra=${html`<button type="button" class="btn small ghost" onClick=${() => onArchive(!archived)}>${ic('archive')} ${archived ? 'Unarchive' : 'Archive'}</button>`} />
+      ${(onReset || onDelete) && html`<div class="row center-row sheet-actions">
         ${onReset && html`<button class="btn small ghost" onClick=${onReset}>${ic('undo')} Reset to original</button>`}
         ${onDelete && html`<button class="btn small danger" onClick=${onDelete}>${ic('trash')} Delete item</button>`}
-      </div>
+      </div>`}
     </div>
   </div>`;
 }
@@ -1466,8 +1467,10 @@ function ItemsScreen({ bank }) {
 
   return html`
     <main class="screen">
-      <nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>
-      <h1 class="title">Hunt items</h1>
+      <nav class="topbar"><a class="back" href="#/">‹ Home</a>
+        <button class=${'archive-link' + (showArchived ? ' sel' : '')} onClick=${() => setShowArchived(!showArchived)} aria-pressed=${showArchived}>
+          ${ic('archive')} ${showArchived ? 'Back to items' : `Archived${archived.size ? ` (${archived.size})` : ''}`}</button></nav>
+      <h1 class="title">${showArchived ? 'Archived items' : 'Hunt items'}</h1>
       <p class="muted">${onCount} of ${all.length - archived.size} items on${archived.size ? ` · ${archived.size} archived` : ''}. New games draw only from items that are on. Changes are shared with everyone.</p>
 
       <section class="panel">
@@ -1476,11 +1479,7 @@ function ItemsScreen({ bank }) {
       </section>
 
       <section class="panel sticky-filters">
-        <div class="row search-row">
-          <input class="text" type="search" placeholder=${showArchived ? 'Search archived…' : 'Search items…'} value=${q} onInput=${(e) => setQ(e.target.value)} />
-          <button class=${'archive-btn' + (showArchived ? ' sel' : '')} onClick=${() => setShowArchived(!showArchived)} aria-pressed=${showArchived}>
-            ${ic('archive')} ${showArchived ? 'Done' : `Archived ${archived.size}`}</button>
-        </div>
+        <input class="text" type="search" placeholder=${showArchived ? 'Search archived…' : 'Search items…'} value=${q} onInput=${(e) => setQ(e.target.value)} />
         ${showArchived && html`<p class="archive-note">${ic('archive')} Archived items: hidden from the list and never used in games. Tap one to bring it back.</p>`}
         <div class="filter-grid">
           <${MultiSelect} label="Categories" allLabel="All categories" noun="categories" value=${catsF} onChange=${setCatsF}

@@ -687,6 +687,10 @@ button.badge { border: 0; font: inherit; font-weight: 800; font-size: 0.65rem; l
 .set-row .multi-btn { padding: var(--s2) 34px var(--s2) var(--s3); font-size: 0.95rem; }
 .search-row { gap: var(--s2); }
 .search-row .text { flex: 1; min-width: 0; }
+.archive-link { display: flex; align-items: center; gap: 5px; background: none; border: 0; padding: 4px 2px; font: inherit; font-size: 0.85rem;
+  font-weight: 700; color: var(--muted); }
+.archive-link.sel { color: var(--ink); }
+.form-extra { margin-right: auto; }
 .archive-btn { flex: none; align-self: stretch; display: flex; align-items: center; gap: 6px; padding: 0 var(--s3); border: 3px solid var(--ink); border-radius: 12px;
   background: #fff; font: inherit; font-weight: 800; color: var(--ink); }
 .archive-btn.sel { background: var(--yellow); }
