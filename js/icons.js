@@ -39,6 +39,7 @@ export const ICONS = {
   collage: ['M7 3h11a3 3 0 0 1 3 3v11', rect(3, 7, 14, 14, 2.5), dot(8, 11.5), 'M3.5 19l4.5-4.5 3 3 2-2 3.5 3.5'],
   save: ['M5 3h11l3 3v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z', 'M8 3v5h7V3', rect(8, 13, 8, 8, 1)],
   plus: ['M12 5v14', 'M5 12h14'],
+  archive: [rect(3, 4, 18, 4, 1.5), 'M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8', 'M10 12h4'],
 };
 
 const pathsFor = (name) => ICONS[name] || ITEM_ICON_PATHS[name] || [];

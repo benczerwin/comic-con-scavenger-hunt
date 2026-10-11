@@ -86,7 +86,7 @@ export function generateCard({ size, difficulty = 'balanced', freeCenter = false
 
 /** Items games draw from: built-ins minus disabled ones, plus custom items. bank = settings/itemBank doc. */
 export function buildPool(bank) {
-  const off = new Set(bank?.disabled || []);
+  const off = new Set([...(bank?.disabled || []), ...(bank?.archived || [])]);
   return [...withOverrides(bank), ...(bank?.custom || []).map((c) => ({ ...normalizeItem(c), custom: true }))].filter((it) => !off.has(it.orig || it.text));
 }
 
@@ -206,6 +206,19 @@ export function playerStats(games, boards) {
     s.topItems = Object.values(s.items).sort((a, b) => b.n - a.n || b.at - a.at);
   }
   return stats;
+}
+
+/** How many times each item (by its text) has been put in play across all games. */
+export function itemUsage(games, boards) {
+  const byCode = Object.fromEntries(games.map((g) => [g.code, g]));
+  const n = {};
+  const add = (it) => { if (it && it.tier !== 'free' && it.text) n[it.text] = (n[it.text] || 0) + 1; };
+  for (const g of games) {
+    if (g.mode === 'endless') { (g.history || []).forEach((h) => add(h.item)); (g.active || []).forEach((a) => add(a.item)); }
+    else if (g.mode !== 'bingo') (g.items || []).forEach(add);
+  }
+  for (const b of boards) if (byCode[b.gameId]) (b.items || []).forEach(add);
+  return n;
 }
 
 /** How each item category fares across all games: { cat: { games, dealt, found, photos, items: {text: finds}, hunters: {pid: finds} } }.

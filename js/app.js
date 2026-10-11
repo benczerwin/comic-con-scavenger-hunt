@@ -555,7 +555,7 @@ function DateMulti({ days, value, onChange }) {
 }
 
 /** Single-choice dropdown in the same style as the filter dropdowns (the native picker looks out of place). */
-function SingleSelect({ options, value, onChange, placeholder, label }) {
+function SingleSelect({ options, value, onChange, placeholder, label, active }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -566,12 +566,38 @@ function SingleSelect({ options, value, onChange, placeholder, label }) {
   }, [open]);
   const cur = options.find((o) => o.value === value);
   return html`<div class="multi-select" ref=${ref}>
-    <button type="button" class="text small-select multi-btn" aria-expanded=${open} aria-label=${label} onClick=${() => setOpen(!open)}>
+    <button type="button" class=${'text small-select multi-btn' + (active ? ' active' : '')} aria-expanded=${open} aria-label=${label} onClick=${() => setOpen(!open)}>
       ${cur?.value ? cur.label : placeholder}</button>
     ${open && html`<div class="multi-pop" role="listbox">
       ${options.map((o) => html`<button type="button" role="option" aria-selected=${o.value === value} key=${o.value}
         class=${'multi-opt single' + (o.value === value ? ' sel' : '')} onClick=${() => { setOpen(false); onChange(o.value); }}>
         <span class="tick">${o.value === value ? ic('check') : ''}</span>${o.label}</button>`)}
+    </div>`}
+  </div>`;
+}
+
+/** Generic multi-choice dropdown (none picked = all). options: [{ value, label, pre? }]. */
+function MultiSelect({ options, value, onChange, allLabel, label, noun }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const values = options.map((o) => o.value);
+  const picked = value.filter((v) => values.includes(v));
+  useEffect(() => {
+    if (!open) return;
+    const away = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [open]);
+  const toggle = (v) => onChange(picked.includes(v) ? picked.filter((x) => x !== v) : values.filter((x) => x === v || picked.includes(x)));
+  const lab = (v) => options.find((o) => o.value === v)?.label;
+  const text = !picked.length ? allLabel : picked.length <= 2 ? picked.map(lab).join(' + ') : `${picked.length} ${noun || 'picked'}`;
+  return html`<div class="multi-select" ref=${ref}>
+    <button type="button" class=${'text small-select multi-btn' + (picked.length ? ' active' : '')} aria-expanded=${open} aria-label=${label}
+      onClick=${() => setOpen(!open)}>${text}</button>
+    ${open && html`<div class="multi-pop" role="listbox" aria-multiselectable="true">
+      <label class="multi-opt"><input type="checkbox" checked=${!picked.length} onChange=${() => onChange([])} /> ${allLabel}</label>
+      ${options.map((o) => html`<label class="multi-opt" key=${o.value}><input type="checkbox" checked=${picked.includes(o.value)} onChange=${() => toggle(o.value)} />
+        ${o.pre || ''}${o.label}</label>`)}
     </div>`}
   </div>`;
 }
@@ -1306,29 +1332,38 @@ function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compa
 
 
 /** Sheet for changing one item in the list. */
-function ItemEditSheet({ item, onSave, onClose, onReset, onDelete }) {
+function ItemEditSheet({ item, onSave, onClose, onReset, onDelete, archived, onArchive, used }) {
   useScrollLock();
   const sheet = useSwipeDown(onClose);
   return html`<div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && onClose()}>
     <div class="modal" ref=${sheet}>
       <button class="x" onClick=${onClose} aria-label="Close">×</button>
       <h2 class="sheet-title">Edit item</h2>
-      ${item.orig && html`<p class="muted small">Originally "${item.orig}".</p>`}
+      ${(item.orig || used !== null) && html`<p class="muted small">${item.orig ? `Originally "${item.orig}". ` : ''}${used !== null ? `Used in games ${used} time${used === 1 ? '' : 's'}.` : ''}</p>`}
       <${ItemForm} initial=${{ ...item, mine: isMine(item) }} submitLabel="Save changes" onSubmit=${onSave} onCancel=${onClose} />
-      ${(onReset || onDelete) && html`<div class="row center-row">
+      <div class="row center-row sheet-actions">
+        <button class="btn small ghost" onClick=${() => onArchive(!archived)}>${ic('archive')} ${archived ? 'Unarchive' : 'Archive'}</button>
         ${onReset && html`<button class="btn small ghost" onClick=${onReset}>${ic('undo')} Reset to original</button>`}
         ${onDelete && html`<button class="btn small danger" onClick=${onDelete}>${ic('trash')} Delete item</button>`}
-      </div>`}
+      </div>
     </div>
   </div>`;
 }
 
 function ItemsScreen({ bank }) {
   const [q, setQ] = useState('');
-  const [tier, setTier] = useState('all');
-  const [show, setShow] = useState('all'); // all | on | off | custom
-  const [catF, setCatF] = useState('all');
+  const [tiersF, setTiersF] = useState([]); // [] = any
+  const [statusF, setStatusF] = useState([]); // 'on' | 'off'
+  const [mineF, setMineF] = useState('any'); // any | mine | not
+  const [catsF, setCatsF] = useState([]);
+  const [showArchived, setShowArchived] = useState(false);
+  const [setName, setSetName] = useState('');
   const disabled = new Set(bank?.disabled || []);
+  const archived = new Set(bank?.archived || []);
+  // How often each item has been in a game.
+  const games = useWatch((cb) => store.watchAll('games', cb), []);
+  const boards = useWatch((cb) => store.watchAll('boards', cb), []);
+  const usage = useMemo(() => (games && boards ? G.itemUsage(games, boards) : null), [games, boards]);
   const custom = bank?.custom || [];
   const overrides = bank?.overrides || {};
   const all = [...custom.map((c) => ({ ...normalizeItem(c), custom: true })), ...G.withOverrides(bank)];
@@ -1336,7 +1371,7 @@ function ItemsScreen({ bank }) {
   const [editing, setEditing] = useState(null); // item being edited
 
   const save = (next) => store.put('settings', BANK_ID, {
-    disabled: bank?.disabled || [], custom, presets: bank?.presets || [], overrides, ...next, updatedAt: Date.now(),
+    disabled: bank?.disabled || [], custom, presets: bank?.presets || [], overrides, archived: bank?.archived || [], ...next, updatedAt: Date.now(),
   }).catch((e) => toast(`Sync problem: ${e.message}`, 'error'));
 
   const saveEdit = (orig, it) => {
@@ -1356,6 +1391,13 @@ function ItemsScreen({ bank }) {
     }
     setEditing(null);
     toast('Saved', 'good');
+  };
+  const setArchived = (it, on) => {
+    const a = new Set(archived);
+    on ? a.add(key(it)) : a.delete(key(it));
+    save({ archived: [...a] });
+    setEditing(null);
+    toast(on ? `Archived "${it.text}". Find it under Archived.` : `"${it.text}" is back in the list.`);
   };
   const resetItem = (it) => {
     const ov = { ...overrides };
@@ -1399,27 +1441,34 @@ function ItemsScreen({ bank }) {
   const loadPreset = (pr) => {
     if (!confirm(`Load "${pr.name}"? It replaces which items are on and off right now.`)) return;
     save({ disabled: pr.disabled });
+    setSetName(pr.name);
     toast(`Loaded "${pr.name}"`);
   };
   const deletePreset = (pr) => {
     if (!confirm(`Delete the saved set "${pr.name}"?`)) return;
     save({ presets: (bank?.presets || []).filter((x) => x.name !== pr.name) });
+    setSetName('');
   };
 
   const needle = q.trim().toLowerCase();
   const filtered = all.filter((it) =>
-    (hideStars || tier === 'all' || it.tier === tier) &&
-    (catF === 'all' || it.cat === catF) &&
-    (show === 'all' || (show === 'on' && !disabled.has(key(it))) || (show === 'off' && disabled.has(key(it))) || (show === 'custom' && isMine(it))) &&
+    archived.has(key(it)) === showArchived &&
+    (hideStars || !tiersF.length || tiersF.includes(it.tier)) &&
+    (!catsF.length || catsF.includes(it.cat)) &&
+    (!statusF.length || statusF.includes(disabled.has(key(it)) ? 'off' : 'on')) &&
+    (mineF === 'any' || (mineF === 'mine') === isMine(it)) &&
     (!needle || it.text.toLowerCase().includes(needle)));
+  const usedTimes = (it) => (usage ? (usage[it.text] || 0) + (it.orig && it.orig !== it.text ? usage[it.orig] || 0 : 0) : null);
   const byCat = Object.keys(CATEGORY_LABELS).map((cat) => [cat, filtered.filter((i) => i.cat === cat)]).filter(([, xs]) => xs.length);
-  const onCount = all.filter((i) => !disabled.has(i.text)).length;
+  const onCount = all.filter((i) => !disabled.has(key(i)) && !archived.has(key(i))).length;
+  const presets = bank?.presets || [];
+  const curSet = presets.find((pr) => pr.name === setName);
 
   return html`
     <main class="screen">
       <nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>
       <h1 class="title">Hunt items</h1>
-      <p class="muted">${onCount} of ${all.length} items on. New games draw only from items that are on. Changes are shared with everyone.</p>
+      <p class="muted">${onCount} of ${all.length - archived.size} items on${archived.size ? ` · ${archived.size} archived` : ''}. New games draw only from items that are on. Changes are shared with everyone.</p>
 
       <section class="panel">
         <h2>Add your own</h2>
@@ -1427,26 +1476,28 @@ function ItemsScreen({ bank }) {
       </section>
 
       <section class="panel sticky-filters">
-        <input class="text" type="search" placeholder="Search items…" value=${q} onInput=${(e) => setQ(e.target.value)} />
-        <div class="filter-row">
-          ${[['all', 'All categories'], ...Object.entries(CATEGORY_LABELS)].map(([k, l]) => html`
-            <button class="pill ${catF === k ? 'sel' : ''}" onClick=${() => setCatF(k)}>${k !== 'all' ? html`<span class=${`dot cat-${k}`}></span> ` : ''}${l}</button>`)}
+        <div class="row search-row">
+          <input class="text" type="search" placeholder=${showArchived ? 'Search archived…' : 'Search items…'} value=${q} onInput=${(e) => setQ(e.target.value)} />
+          <button class=${'archive-btn' + (showArchived ? ' sel' : '')} onClick=${() => setShowArchived(!showArchived)} aria-pressed=${showArchived}>
+            ${ic('archive')} ${showArchived ? 'Done' : `Archived ${archived.size}`}</button>
         </div>
-        ${!hideStars && html`<div class="filter-row">
-          ${[['all', 'All stars'], ['e', '★'], ['m', '★★'], ['h', '★★★']].map(([k, l]) => html`
-            <button class="pill ${tier === k ? 'sel' : ''}" onClick=${() => setTier(k)}>${l}</button>`)}
-        </div>`}
-        <div class="filter-row">
-          ${[['all', 'Any'], ['on', 'On'], ['off', 'Off'], ['custom', 'Mine']].map(([k, l]) => html`
-            <button class="pill ${show === k ? 'sel' : ''}" onClick=${() => setShow(k)}>${l}</button>`)}
+        ${showArchived && html`<p class="archive-note">${ic('archive')} Archived items: hidden from the list and never used in games. Tap one to bring it back.</p>`}
+        <div class="filter-grid">
+          <${MultiSelect} label="Categories" allLabel="All categories" noun="categories" value=${catsF} onChange=${setCatsF}
+            options=${Object.entries(CATEGORY_LABELS).map(([k, l]) => ({ value: k, label: l, pre: html`<span class=${`dot cat-${k}`}></span> ` }))} />
+          <${MultiSelect} label="On or off" allLabel="On + off" value=${statusF} onChange=${setStatusF}
+            options=${[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]} />
+          <${SingleSelect} label="Mine" active=${mineF !== 'any'} value=${mineF} onChange=${setMineF} placeholder="Mine: any"
+            options=${[{ value: 'any', label: 'Mine: any' }, { value: 'mine', label: 'Only mine' }, { value: 'not', label: 'Not mine' }]} />
+          ${!hideStars && html`<${MultiSelect} label="Stars" allLabel="All stars" noun="star levels" value=${tiersF} onChange=${setTiersF}
+            options=${[{ value: 'e', label: '★' }, { value: 'm', label: '★★' }, { value: 'h', label: '★★★' }]} />`}
         </div>
-        <div class="presets">
-          <span class="muted small">Saved sets:</span>
-          ${(bank?.presets || []).map((pr) => html`<span class="preset" key=${pr.name}>
-            <button class="pill" onClick=${() => loadPreset(pr)}>${pr.name} <small>(${all.length - pr.disabled.length} on)</small></button>
-            <button class="preset-x" aria-label=${`Delete ${pr.name}`} onClick=${() => deletePreset(pr)}>×</button>
-          </span>`)}
-          <button class="pill" onClick=${savePreset}>${ic('save')} Save current</button>
+        <div class="row game-filters set-row">
+          <${SingleSelect} label="Saved sets" placeholder=${presets.length ? 'Saved sets…' : 'No saved sets yet'} value=${setName}
+            onChange=${(n) => { const pr = presets.find((x) => x.name === n); if (pr) loadPreset(pr); }}
+            options=${presets.map((pr) => ({ value: pr.name, label: `${pr.name} (${all.length - pr.disabled.length} on)` }))} />
+          ${curSet && html`<button class="preset-del" aria-label="Delete saved set" onClick=${() => deletePreset(curSet)}>${ic('trash')}</button>`}
+          <button class="preset-del" aria-label="Save current picks as a set" title="Save current" onClick=${savePreset}>${ic('save')}</button>
         </div>
         <div class="row small">
           <span class="grow muted">${filtered.length} shown</span>
@@ -1464,6 +1515,7 @@ function ItemsScreen({ bank }) {
               <button class="item-edit" aria-label=${`Edit ${it.text}`} onClick=${() => setEditing(it)}>
               <span class="icon">${itemIcon(it.icon)}</span>
               <span class="grow">${it.text}${it.orig ? html` <i class="badge edited">edited</i>` : ''}${isMine(it) && html` <i class="badge">mine</i>`}<small class="stars">${TIER_STARS[it.tier]}</small></span>
+              ${usedTimes(it) !== null && html`<span class=${'used' + (usedTimes(it) ? '' : ' zero')} title="Times in a game">${usedTimes(it)}×</span>`}
               </button>
               <label class="switch"><input type="checkbox" checked=${on} onChange=${() => toggle(key(it))} /><span></span></label>
             </div>`;
@@ -1471,6 +1523,7 @@ function ItemsScreen({ bank }) {
         </section>`)}
       ${!filtered.length && html`<p class="muted center">No items match.</p>`}
       ${editing && html`<${ItemEditSheet} item=${editing} onSave=${(it) => saveEdit(editing, it)} onClose=${() => setEditing(null)}
+        archived=${archived.has(key(editing))} onArchive=${(on) => setArchived(editing, on)} used=${usedTimes(editing)}
         onReset=${editing.orig ? () => resetItem(editing) : null}
         onDelete=${editing.custom ? () => { removeCustom(editing.text); setEditing(null); } : null} />`}
     </main>`;
