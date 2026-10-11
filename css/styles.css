@@ -673,10 +673,10 @@ button.badge { border: 0; font: inherit; font-weight: 800; font-size: 0.65rem; l
 .game-card.done { background: #efe9dc; }
 .game-card.done .stack { opacity: 0.6; }
 .stats-filters { margin-bottom: var(--s2); }
-.preset-row { margin: 0 0 var(--s4); gap: var(--s2); }
-.preset-row .small-select { min-width: 0; padding: var(--s2) 36px var(--s2) var(--s3); font-size: 0.95rem; font-weight: 700; }
-.preset-row .small-select:not(.active) { color: var(--ink); }
-.preset-row .small-select.active { color: #1c6dd0; }
+.preset-row { margin: 0 0 var(--s4); }
+.preset-del { flex: none; width: 46px; align-self: stretch; display: grid; place-items: center; border: 3px solid var(--ink); border-radius: 12px; background: #fff;
+  color: var(--ink); font-size: 1.15rem; padding: 0; }
+.preset-del:active { filter: brightness(0.9); }
 .save-setup { display: block; width: 100%; margin-top: var(--s3); }
 .filter-note { margin: 0 0 var(--s4); }
 .multi-select { position: relative; flex: 1 1 0; min-width: 0; display: flex; }

@@ -753,13 +753,13 @@ function NewGame({ mode, me, players }) {
     <main class="screen">
       <nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>
       <h1 class="title">${isBingo ? 'New Solo Series' : isEndless ? 'New Endless Hunt' : 'New Crossover'}</h1>
-      ${modePresets.length > 0 && html`<div class="row preset-row">
-        <select class=${'text small-select grow' + (presetId ? ' active' : '')} value=${presetId} aria-label="Presets"
+      ${modePresets.length > 0 && html`<div class="row game-filters preset-row">
+        <select class="text small-select" value=${presetId} aria-label="Presets"
           onChange=${(e) => applyPreset(e.target.value)}>
           <option value="">Choose a preset…</option>
           ${modePresets.map((p) => html`<option value=${p.id}>${p.name}</option>`)}
         </select>
-        ${presetId && html`<button class="btn small ghost" onClick=${deletePreset}>${ic('trash')} Delete</button>`}
+        ${presetId && html`<button class="preset-del" aria-label="Delete preset" onClick=${deletePreset}>${ic('trash')}</button>`}
       </div>`}
 
       ${isEndless ? html`<section class="panel">
