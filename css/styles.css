@@ -323,6 +323,11 @@ a { color: inherit; }
 /* Fixed-size frame: the square thumbnail shows first, then the full photo (any shape) swaps in without moving anything. */
 .photo img { width: 100%; height: min(55vh, 460px); height: min(55dvh, 460px); border: 3px solid var(--ink); border-radius: 12px; display: block;
   background: #1d1d1d; object-fit: contain; }
+.photo-wait { height: min(55vh, 460px); height: min(55dvh, 460px); display: grid; place-items: center; border: 3px solid var(--ink);
+  border-radius: 12px; background: #1d1d1d; }
+.photo-wait .spinner { border-color: #555; border-top-color: var(--red); }
+.photo img { animation: fadein 0.15s ease-out; }
+@keyframes fadein { from { opacity: 0; } }
 .photo figcaption { display: flex; align-items: center; gap: 6px; font-weight: 800; margin-top: 6px; }
 .photo-btns { display: flex; flex-direction: column; gap: var(--s3); }
 .busy {
@@ -678,6 +683,7 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
   font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .multi-pop { position: absolute; top: calc(100% + 4px); left: 0; min-width: 100%; z-index: 30; background: #fff; border: 2px solid var(--ink);
   border-radius: 12px; box-shadow: 3px 3px 0 var(--ink); padding: var(--s1); max-height: 60vh; overflow-y: auto; }
+.multi-pop.right { left: auto; right: 0; }
 .multi-opt { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); font-weight: 700; white-space: nowrap; border-radius: 8px; }
 .multi-opt input { width: 20px; height: 20px; accent-color: var(--red); flex: none; }
 .multi-opt:active { background: #fff3bf; }

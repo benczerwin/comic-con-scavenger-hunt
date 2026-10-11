@@ -420,15 +420,15 @@ function Home({ me, playersById }) {
   const sorted = (games || []).slice().sort((a, b) => b.createdAt - a.createdAt);
   // Filters stick between visits (per device). A saved date or player that no longer has games falls back to all.
   const [daysSaved, setDays] = usePrefList('nycc-home:days');
-  const [whoSaved, setWho] = usePref('nycc-home:who', 'all');
+  const [whoSaved, setWho] = usePrefList('nycc-home:players');
   const [status, setStatus] = usePref('nycc-home:status', 'all');
   const { recap, makeRecap, closeRecap } = useRecap(playersById);
   const dayKey = (t) => new Date(t).toDateString();
   const days = [...new Set(sorted.map((g) => dayKey(g.createdAt)))];
   const people = [...new Set(sorted.flatMap((g) => g.players))].filter((pid) => playersById[pid]);
   const pickedDays = games ? daysSaved.filter((d) => days.includes(d)) : daysSaved;
-  const who = !games || people.includes(whoSaved) ? whoSaved : 'all';
-  const shown = sorted.filter((g) => (!pickedDays.length || pickedDays.includes(dayKey(g.createdAt))) && (who === 'all' || g.players.includes(who))
+  const who = games ? whoSaved.filter((pid) => people.includes(pid)) : whoSaved;
+  const shown = sorted.filter((g) => (!pickedDays.length || pickedDays.includes(dayKey(g.createdAt))) && (!who.length || who.some((pid) => g.players.includes(pid)))
     && (status === 'all' || (status === 'done') === isDone(g)));
 
 
@@ -474,10 +474,7 @@ function Home({ me, playersById }) {
         ${games && !sorted.length && html`<p class="muted">No games yet. Start one above!</p>`}
         ${sorted.length > 1 && html`<div class="row game-filters">
           <${DateMulti} days=${days} value=${pickedDays} onChange=${setDays} />
-          <select class=${'text small-select' + (who !== 'all' ? ' active' : '')} value=${who} onChange=${(e) => setWho(e.target.value)} aria-label="Filter by player">
-            <option value="all">Everyone</option>
-            ${people.map((pid) => html`<option value=${pid}>${pid === me.id ? 'Me' : playersById[pid].name}</option>`)}
-          </select>
+          <${PlayerMulti} people=${people} value=${who} onChange=${setWho} me=${me} playersById=${playersById} />
         </div>`}
         ${sorted.length > 1 && html`<div class="filter-row status-filter">
           ${[['all', 'All games'], ['live', 'In progress'], ['done', 'Done']].map(([k, l]) => html`
@@ -553,6 +550,31 @@ function DateMulti({ days, value, onChange }) {
         <label class="multi-opt year"><input type="checkbox" checked=${yearOn(y)} onChange=${() => toggleYear(y)} /> All of ${y}</label>
         ${daysOf(y).map((d) => html`<label class="multi-opt day" key=${d}><input type="checkbox" checked=${picked.includes(d)} onChange=${() => toggle(d)} /> ${dayLabel(d)}</label>`)}
       </div>`)}
+    </div>`}
+  </div>`;
+}
+
+/** Pick any number of players (none picked = everyone). value: array of player ids. */
+function PlayerMulti({ people, value, onChange, me, playersById }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const picked = value.filter((pid) => people.includes(pid));
+  useEffect(() => {
+    if (!open) return;
+    const away = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [open]);
+  const nm = (pid) => (pid === me.id ? 'Me' : playersById[pid]?.name || 'Someone');
+  const toggle = (pid) => onChange(picked.includes(pid) ? picked.filter((x) => x !== pid) : people.filter((x) => x === pid || picked.includes(x)));
+  const label = !picked.length ? 'Everyone' : picked.length <= 2 ? picked.map(nm).join(' + ') : `${picked.length} players`;
+  return html`<div class="multi-select" ref=${ref}>
+    <button type="button" class=${'text small-select multi-btn' + (picked.length ? ' active' : '')} aria-expanded=${open} aria-label="Filter by player"
+      onClick=${() => setOpen(!open)}>${label}</button>
+    ${open && html`<div class="multi-pop right" role="listbox" aria-multiselectable="true">
+      <label class="multi-opt"><input type="checkbox" checked=${!picked.length} onChange=${() => onChange([])} /> Everyone</label>
+      ${people.map((pid) => html`<label class="multi-opt" key=${pid}><input type="checkbox" checked=${picked.includes(pid)} onChange=${() => toggle(pid)} />
+        <${Emblem} id=${playersById[pid]?.emblem} size=${20} /> ${nm(pid)}</label>`)}
     </div>`}
   </div>`;
 }
@@ -980,7 +1002,7 @@ function StatsScreen({ me, players, playersById, focus }) {
   const games = useWatch((cb) => store.watchAll('games', cb), []);
   const boards = useWatch((cb) => store.watchAll('boards', cb), []);
   const [daysSaved, setDays] = usePrefList('nycc-stats:days');
-  const [whoSaved, setWho] = usePref('nycc-stats:who', 'all');
+  const [whoSaved, setWho] = usePrefList('nycc-stats:players');
   if (games === undefined || boards === undefined) return html`<main class="screen"><p class="muted center">Crunching numbers…</p></main>`;
 
   // Filters: only games on the picked days and/or with the picked player count toward every number below.
@@ -989,16 +1011,16 @@ function StatsScreen({ me, players, playersById, focus }) {
   const days = [...new Set(allSorted.map((g) => dayKey(g.createdAt)))];
   const people = [...new Set(allSorted.flatMap((g) => g.players || []))].filter((pid) => playersById[pid]);
   const pickedDays = daysSaved.filter((d) => days.includes(d));
-  const who = people.includes(whoSaved) ? whoSaved : 'all';
-  const fGames = games.filter((g) => (!pickedDays.length || pickedDays.includes(dayKey(g.createdAt))) && (who === 'all' || g.players?.includes(who)));
+  const who = whoSaved.filter((pid) => people.includes(pid));
+  const fGames = games.filter((g) => (!pickedDays.length || pickedDays.includes(dayKey(g.createdAt))) && (!who.length || who.some((pid) => g.players?.includes(pid))));
   const inSet = new Set(fGames.map((g) => g.code));
   const fBoards = boards.filter((b) => inSet.has(b.gameId));
   const filtered = fGames.length !== games.length;
 
   const stats = G.playerStats(fGames, fBoards);
   // Picking a player shows only that player: their card, their finds per category, their records.
-  const catStats = G.categoryStats(fGames, fBoards, who === 'all' ? null : who);
-  const ranked = (players || []).filter((p) => stats[p.id] && (who === 'all' || p.id === who))
+  const catStats = G.categoryStats(fGames, fBoards, who);
+  const ranked = (players || []).filter((p) => stats[p.id] && (!who.length || who.includes(p.id)))
     .sort((a, b) => stats[b.id].wins - stats[a.id].wins || stats[b.id].found - stats[a.id].found);
 
   if (focus && playersById[focus]) return html`<${PlayerStats} p=${playersById[focus]} s=${stats[focus]} me=${me} playersById=${playersById}
@@ -1022,14 +1044,11 @@ function StatsScreen({ me, players, playersById, focus }) {
       <h1 class="title">Player stats</h1>
       ${games.length > 1 && html`<div class="row game-filters stats-filters">
         <${DateMulti} days=${days} value=${pickedDays} onChange=${setDays} />
-        <select class=${'text small-select' + (who !== 'all' ? ' active' : '')} value=${who} onChange=${(e) => setWho(e.target.value)} aria-label="Filter by player">
-          <option value="all">Everyone</option>
-          ${people.map((pid) => html`<option value=${pid}>${pid === me.id ? 'Me' : playersById[pid].name}</option>`)}
-        </select>
+        <${PlayerMulti} people=${people} value=${who} onChange=${setWho} me=${me} playersById=${playersById} />
       </div>
       <p class="muted small filter-note">${filtered ? `Showing ${fGames.length} of ${games.length} games` : `All ${games.length} games`}</p>`}
       ${!ranked.length && html`<div class="panel center muted">${filtered ? 'No games match these filters.' : 'No games played yet. Go hunt!'}</div>`}
-      ${ranked.length > 1 && html`<section class="panel">
+      ${ranked.length > 0 && awards.length > 0 && html`<section class="panel">
         <h2>Bragging rights</h2>
         <div class="awards">
           ${awards.map(([icon, label, p, key]) => {
@@ -1674,9 +1693,25 @@ function useSwipeDown(onClose) {
 }
 
 /** onReroll: swap an unfound square for a random same-star item. onBlock: swap it out and turn it off for good. */
+// Full-size photos, fetched once per session. The sheet waits for the real photo instead of flashing the
+// square thumbnail first (a different crop, so it visibly jumped when the full one replaced it).
+const fullCache = new Map();
+const fullLoads = new Map();
+const loadFull = (id) => {
+  if (fullCache.has(id)) return Promise.resolve(fullCache.get(id));
+  if (!fullLoads.has(id)) {
+    fullLoads.set(id, store.getOne('photos', id).then((d) => {
+      if (d?.full) fullCache.set(id, d.full);
+      fullLoads.delete(id);
+      return d?.full || null;
+    }).catch(() => { fullLoads.delete(id); return null; }));
+  }
+  return fullLoads.get(id);
+};
+
 function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel, onFile, onNoPhoto, onRemove, removeLabel, onEdit,
-  onReroll, onBlock, rerolls = 0, onClose, note, onPrev, onNext, position }) {
-  const [full, setFull] = useState(null);
+  onReroll, onBlock, rerolls = 0, onClose, note, onPrev, onNext, position, prefetch }) {
+  const [full, setFull] = useState(() => fullCache.get(photoId) || null);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   useScrollLock();
@@ -1684,10 +1719,11 @@ function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel,
   useSwipeSides(sheet, onPrev, onNext);
 
   useEffect(() => {
-    setFull(null);
+    setFull(fullCache.get(photoId) || null);
     if (!photoId) return;
     let alive = true;
-    store.getOne('photos', photoId).then((d) => alive && d && setFull(d.full));
+    loadFull(photoId).then((f) => alive && f && setFull(f));
+    (prefetch || []).forEach((id) => id && loadFull(id)); // neighbours, so swiping lands on a ready photo
     return () => { alive = false; };
   }, [photoId]);
 
@@ -1710,7 +1746,8 @@ function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel,
         </div>
         ${photoId && html`
           <figure class="photo">
-            <img src=${full || thumb} alt=${item.text} />
+            ${full ? html`<img src=${full} alt=${item.text} />`
+              : html`<div class="photo-wait" aria-label="Loading photo"><span class="spinner"></span></div>`}
             ${by && html`<figcaption><${Emblem} id=${by.emblem} size=${22} /> ${by.name}
               ${at && html`<span class="muted"> · ${new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>`}</figcaption>`}
           </figure>`}
@@ -2623,6 +2660,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         thumb=${viewing.photo && thumbs[viewing.photo]?.thumb} by=${found ? playersById[viewing.by] : null} at=${viewing.at}
         note=${found ? null : `${why}${viewing.by ? ` by ${name(viewing.by)}` : ''}`}
         position=${`${k + 1} of ${history.length}`}
+        prefetch=${[history[k - 1]?.photo, history[k + 1]?.photo]}
         onPrev=${k > 0 ? () => setOpen(history[k - 1].i) : null}
         onNext=${k < history.length - 1 ? () => setOpen(history[k + 1].i) : null}
         canAct=${false} onClose=${() => setOpen(null)} />`;

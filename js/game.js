@@ -203,7 +203,8 @@ export function playerStats(games, boards) {
 
 /** How each item category fares across all games: { cat: { games, dealt, found, photos, items: {text: finds}, hunters: {pid: finds} } }.
  *  dealt = times an item of that category was put in play (on a board, placed, or dealt in Endless). */
-export function categoryStats(games, boards, onlyPid = null) {
+export function categoryStats(games, boards, onlyPids = null) {
+  const only = onlyPids?.length ? new Set(onlyPids) : null;
   const byCode = Object.fromEntries(games.map((g) => [g.code, g]));
   const out = {};
   const C = (item) => {
@@ -213,7 +214,7 @@ export function categoryStats(games, boards, onlyPid = null) {
   };
   const dealt = (item) => { const c = C(item); if (c) c.dealt++; };
   const found = (item, pid, photo) => {
-    if (onlyPid && pid !== onlyPid) return; // stats for one player: only their finds count
+    if (only && !only.has(pid)) return; // stats for picked players: only their finds count
     const c = C(item);
     if (!c) return;
     c.found++;
@@ -235,7 +236,7 @@ export function categoryStats(games, boards, onlyPid = null) {
   }
   const bingoSeen = {};
   for (const b of boards) {
-    if (!byCode[b.gameId] || (onlyPid && b.playerId !== onlyPid)) continue;
+    if (!byCode[b.gameId] || (only && !only.has(b.playerId))) continue;
     for (const it of b.items || []) { dealt(it); const c = C(it); if (c) (bingoSeen[b.gameId] ??= new Set()).add(c); }
     for (const [i, m] of Object.entries(b.marks || {})) found(b.items?.[i], b.playerId, m.photo);
   }
