@@ -3,7 +3,7 @@ import * as store from './store.js';
 import { EMBLEMS, emblemById, emblemSVG } from './data/emblems.js';
 import { CATEGORY_LABELS, ITEMS, itemKind, catLabel, normalizeItem } from './data/items.js';
 import * as G from './game.js';
-import { iconMarkup, iconSVG } from './icons.js';
+import { iconMarkup, iconSVG, itemIconName, PICKABLE_ICONS } from './icons.js';
 import { processPhoto } from './photo.js';
 import { renderRecap, renderCollage } from './recap.js';
 
@@ -49,6 +49,8 @@ let pushToast = () => {};
 const Ico = ({ n, size }) => html`<svg class="ico" viewBox="0 0 24 24" style=${size ? `width:${size}px;height:${size}px` : undefined} fill="none" stroke="currentColor"
   stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" dangerouslySetInnerHTML=${{ __html: iconMarkup(n) }} />`;
 const ic = (n, size) => html`<${Ico} n=${n} size=${size} />`;
+/** An item's picture: its flat icon (an older custom item with an emoji we can't match gets the camera). */
+const itemIcon = (icon) => ic(itemIconName(icon) || 'camera');
 
 const toast = (msg, kind = 'info') => pushToast({ msg, kind, id: Math.random() });
 
@@ -1050,7 +1052,8 @@ function PlayerStats({ p, s, me, playersById }) {
 const TIER_LABELS = { e: 'Easy', m: 'Medium', h: 'Hard' };
 
 function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compact }) {
-  const [icon, setIcon] = useState(initial?.icon || '');
+  const [icon, setIcon] = useState(itemIconName(initial?.icon) || 'camera');
+  const [picking, setPicking] = useState(false);
   const [text, setText] = useState(initial?.text || '');
   const [tier, setTier] = useState(initial?.tier && initial.tier !== 'free' ? initial.tier : 'e');
   const [cat, setCat] = useState(initial?.cat && initial.cat !== 'free' ? normalizeItem(initial).cat : 'desc');
@@ -1059,18 +1062,22 @@ function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compa
     e.preventDefault();
     const t = text.trim();
     if (!t) return toast('Describe what to find.', 'error');
-    onSubmit({ icon: icon.trim() || '📸', text: t.slice(0, 80), tier, cat });
-    if (!initial) { setIcon(''); setText(''); }
+    onSubmit({ icon, text: t.slice(0, 80), tier, cat });
+    if (!initial) { setIcon('camera'); setText(''); }
   };
 
   return html`
     <form class="item-form ${compact ? 'compact' : ''}" onSubmit=${submit}>
       <div class="row">
-        <input class="text emoji" placeholder="🙂" value=${icon} maxlength="8" aria-label="Emoji"
-          onInput=${(e) => setIcon(e.target.value)} />
+        <button type="button" class=${'icon-pick-btn' + (picking ? ' sel' : '')} aria-label="Choose an icon" aria-expanded=${picking}
+          onClick=${() => setPicking(!picking)}>${ic(icon)}</button>
         <input class="text grow" placeholder="What to find, e.g. Someone with a tail" value=${text} maxlength="80"
           onInput=${(e) => setText(e.target.value)} />
       </div>
+      ${picking && html`<div class="icon-grid">
+        ${PICKABLE_ICONS.map((n) => html`<button type="button" class=${n === icon ? 'sel' : ''} aria-label=${n}
+          onClick=${() => { setIcon(n); setPicking(false); }}>${ic(n)}</button>`)}
+      </div>`}
       <${Choice} value=${tier} onChange=${setTier} options=${Object.entries(TIER_LABELS).map(([k, l]) => [k, l, TIER_STARS[k]])} />
       <select class="text" value=${cat} onChange=${(e) => setCat(e.target.value)} aria-label="Category">
         ${Object.entries(CATEGORY_LABELS).map(([k, l]) => html`<option value=${k}>${l}</option>`)}
@@ -1192,7 +1199,7 @@ function ItemsScreen({ bank }) {
           ${items.map((it) => {
             const on = !disabled.has(it.text);
             return html`<div class="item-row ${on ? '' : 'off'}" key=${it.text}>
-              <span class="icon">${it.icon}</span>
+              <span class="icon">${itemIcon(it.icon)}</span>
               <span class="grow">${it.text}${(it.custom || it.mine) && html` <i class="badge">mine</i>`}<small class="stars">${TIER_STARS[it.tier]}</small></span>
               ${it.custom && html`<button class="icon-btn round" aria-label="Delete item" onClick=${() => removeCustom(it.text)}>${TRASH_SVG}</button>`}
               <label class="switch"><input type="checkbox" checked=${on} onChange=${() => toggle(it.text)} /><span></span></label>
@@ -1219,7 +1226,7 @@ function Tile({ item, thumb, found, stamp, win, swapTarget, claimColor, onClick 
         <span class="cap">${item.text}</span>
         ${stamp && html`<span class="stamp"><${Emblem} id=${stamp} size=${22} /></span>`}
       ` : html`
-        <span class="icon">${item.icon}</span>
+        <span class="icon">${itemIcon(item.icon)}</span>
         <span class="txt">${item.text}</span>
         ${TIER_STARS[item.tier] && !found && html`<span class="stars">${TIER_STARS[item.tier]}</span>`}
         ${found && html`<span class="check">${ic('check')}</span>`}
@@ -1249,7 +1256,7 @@ function BackupTray({ backups, swapIdx, setSwapIdx, canUse }) {
         ${backups.map((b, i) => html`
           <button class="backup ${swapIdx === i ? 'sel' : ''}" disabled=${!canUse}
             onClick=${() => setSwapIdx(swapIdx === i ? null : i)}>
-            <span class="icon">${b.icon}</span><span>${b.text}</span><i>${TIER_STARS[b.tier]}</i>
+            <span class="icon">${itemIcon(b.icon)}</span><span>${b.text}</span><i>${TIER_STARS[b.tier]}</i>
           </button>`)}
       </div>
       ${swapIdx !== null && swapIdx !== undefined && html`
@@ -1526,7 +1533,7 @@ function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel,
       <div class="modal" ref=${sheet}>
         <button class="x" onClick=${onClose} aria-label="Close">×</button>
         <div class="modal-head cat-${item.cat}">
-          <span class="icon">${item.icon}</span>
+          <span class="icon">${itemIcon(item.icon)}</span>
           <div>
             <h2>${item.text}</h2>
             <small>${catLabel(item.cat)} ${TIER_STARS[item.tier] && html`· <span class="stars">${TIER_STARS[item.tier]}</span>`}</small>
@@ -2246,7 +2253,7 @@ function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       </div>
       <div class="hand-grid">
         ${hand.map((it, idx) => html`<button class=${`hand-card cat-${it.cat}`} key=${it.text} disabled=${!!pending} onClick=${() => setHandIdx(idx)}>
-          <span class="icon">${it.icon}</span><span class="txt">${it.text}</span><span class="stars">${TIER_STARS[it.tier]}</span>
+          <span class="icon">${itemIcon(it.icon)}</span><span class="txt">${it.text}</span><span class="stars">${TIER_STARS[it.tier]}</span>
         </button>`)}
       </div>
     </section>`}
@@ -2390,7 +2397,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
           : html`<div class=${'endless-slot' + (canSnap && !single ? ' quick' : '')} key=${slot.id}>
             <button class=${`endless-card cat-${slot.item.cat}${single ? '' : ' compact'}`} disabled=${single || !canSnap} onClick=${() => setSnapId(slot.id)}>
               <span class="stars">${TIER_STARS[slot.item.tier]}</span>
-              <span class="icon">${slot.item.icon}</span>
+              <span class="icon">${itemIcon(slot.item.icon)}</span>
               <h2>${slot.item.text}</h2>
               <small>${catLabel(slot.item.cat)} · ${pts(slot.item)} pt${pts(slot.item) === 1 ? '' : 's'}</small>
             </button>
@@ -2416,7 +2423,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
           const what = found ? `${TIER_STARS[h.item.tier]} +${pts(h.item)}`
             : h.rerolled ? html`${ic('dice')} Rerolled` : h.blocked ? html`${ic('ban')} Blocked` : h.expired ? html`${ic('hourglass')} Swapped out after ${G.ENDLESS_EXPIRE_AFTER} other finds` : 'Skipped';
           return html`<button class=${'hist-row' + (found ? '' : ' skipped')} key=${h.i} onClick=${() => found && setOpen(h.i)}>
-            ${h.photo && thumbs[h.photo] ? html`<img src=${thumbs[h.photo].thumb} alt="" />` : html`<span class=${`hist-icon cat-${h.item.cat}`}>${h.item.icon}</span>`}
+            ${h.photo && thumbs[h.photo] ? html`<img src=${thumbs[h.photo].thumb} alt="" />` : html`<span class=${`hist-icon cat-${h.item.cat}`}>${itemIcon(h.item.icon)}</span>`}
             <span class="grow"><b>${h.item.text}</b><small>${who}${what}</small></span>
           </button>`;
         })}
@@ -2450,7 +2457,7 @@ function PickSlot({ slot, game, me, isPlayer, name, onDeal }) {
       <h3>Categories</h3>
       <${CatPicker} value=${cats} onChange=${setCats} />
       <button class="btn primary huge" disabled=${!cats.length} onClick=${() => onDeal(slot, hideStars ? 'any' : tier, someCats(cats) || null)}>
-        ${cats.length ? '🃏 Deal it!' : 'Pick a category'}</button>`
+        ${cats.length ? html`${ic('cards')} Deal it!` : 'Pick a category'}</button>`
     : html`<p class="muted">Join the game to play.</p>`}
   </section>`;
 }

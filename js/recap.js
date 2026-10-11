@@ -1,7 +1,7 @@
 // Renders a finished game into one shareable comic-poster PNG.
 import { emblemSVG, emblemById } from './data/emblems.js';
 import * as G from './game.js';
-import { drawIcon } from './icons.js';
+import { drawIcon, itemIconName } from './icons.js';
 
 /** Centered line of text with a line icon in front of it. Uses the current font/fill. */
 function iconLine(ctx, icon, text, cx, y, size) {
@@ -130,10 +130,15 @@ async function drawBoard(ctx, { x, y, w, n, cells, highlight, versus, thumbs, ge
       ctx.fillStyle = CAT_COLORS[item.cat] || '#fff'; ctx.fillRect(cx, cy, cell, cell);
       halftone(ctx, cx, cy, cell, cell, 'rgba(0,0,0,0.12)', mini ? 6 : 9, mini ? 1 : 1.4);
       ctx.globalAlpha = item.tier === 'free' ? 1 : found ? 0.4 : 0.55;
-      ctx.font = `${cell * (mini ? 0.42 : 0.34)}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = INK;
-      ctx.fillText(item.icon, cx + cell / 2, cy + cell * (mini ? 0.42 : 0.36));
-      ctx.textBaseline = 'alphabetic';
+      const isz = cell * (mini ? 0.42 : 0.34), iy = cy + cell * (mini ? 0.42 : 0.36);
+      const iname = itemIconName(item.icon) || (item.icon ? 'camera' : null);
+      if (iname) { drawIcon(ctx, iname, cx + cell / 2 - isz / 2, iy - isz / 2, isz, INK, 2); ctx.textAlign = 'center'; ctx.fillStyle = INK; }
+      else {
+        ctx.font = `${isz}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = INK;
+        ctx.fillText(item.icon, cx + cell / 2, iy);
+        ctx.textBaseline = 'alphabetic';
+      }
       if (!mini || item.tier === 'free') {
         const fs = item.tier === 'free' ? cell * 0.15 : Math.max(11, cell * 0.1);
         ctx.font = item.tier === 'free' ? `${fs}px ${DISPLAY}` : `800 ${fs}px ${BODY}`;

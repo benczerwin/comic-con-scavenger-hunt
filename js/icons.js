@@ -1,5 +1,6 @@
 // Flat line icons (24×24, round stroke), shared by the app (as SVG) and the recap images (drawn on canvas).
 // Each icon is a list of path strings; { d, fill: true } entries are solid dots.
+import { ITEM_ICON_PATHS, EMOJI_ICON } from './data/item-icons.js';
 
 const circle = (cx, cy, r) => `M${cx - r} ${cy}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0z`;
 const rect = (x, y, w, h, r) =>
@@ -40,9 +41,23 @@ export const ICONS = {
   plus: ['M12 5v14', 'M5 12h14'],
 };
 
+const pathsFor = (name) => ICONS[name] || ITEM_ICON_PATHS[name] || [];
+
+/** An item's icon field is an emoji (built-ins, older custom items) or an icon name (custom items picked in the app).
+ *  Returns the flat icon to draw, or null when there's none (an emoji we have no match for). */
+export const itemIconName = (icon) => EMOJI_ICON[icon] || (ICONS[icon] || ITEM_ICON_PATHS[icon] ? icon : null);
+
+/** Icons offered when adding your own item. */
+export const PICKABLE_ICONS = ['camera', 'star', 'heart', 'sparkles', 'shield-star', 'mood-wrrr', 'skull', 'ghost', 'alien', 'robot',
+  'crown', 'sword', 'swords', 'wand', 'flame', 'bolt', 'paw', 'cat', 'dog', 'feather', 'butterfly', 'flower', 'leaf', 'tree', 'moon',
+  'sun', 'rocket', 'planet', 'ufo', 'pumpkin-scary', 'spider', 'bat', 'masks-theater', 'palette', 'music', 'microphone',
+  'device-gamepad-2', 'movie', 'book', 'gift', 'backpack', 'shopping-bag', 'shirt', 'hanger', 'eyeglass', 'sunglasses',
+  'cap-rounded', 'package', 'lego', 'puzzle', 'dice-5', 'pokeball', 'pizza', 'coffee', 'ice-cream', 'balloon', 'trophy', 'users']
+  .filter((n) => ICONS[n] || ITEM_ICON_PATHS[n]);
+
 /** Inner SVG markup for an icon (stroke/fill come from currentColor). */
 export function iconMarkup(name) {
-  return (ICONS[name] || []).map((p) => (typeof p === 'string'
+  return pathsFor(name).map((p) => (typeof p === 'string'
     ? `<path d="${p}"/>`
     : `<path d="${p.d}" fill="currentColor" stroke="none"/>`)).join('');
 }
@@ -60,7 +75,7 @@ export function drawIcon(ctx, name, x, y, size, color = '#141414', weight = 2.2)
   ctx.scale(size / 24, size / 24);
   ctx.strokeStyle = color; ctx.fillStyle = color;
   ctx.lineWidth = weight; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  for (const p of ICONS[name] || []) {
+  for (const p of pathsFor(name)) {
     const path = new Path2D(typeof p === 'string' ? p : p.d);
     if (typeof p === 'string') ctx.stroke(path); else ctx.fill(path);
   }
