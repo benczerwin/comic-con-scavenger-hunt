@@ -387,6 +387,7 @@ function Home({ me, playersById }) {
   const [day, setDay] = useState('all');
   const [who, setWho] = useState('all');
   const [status, setStatus] = useState('all');
+  const { recap, makeRecap, closeRecap } = useRecap(playersById);
   const dayKey = (t) => new Date(t).toDateString();
   const days = [...new Set(sorted.map((g) => dayKey(g.createdAt)))];
   const people = [...new Set(sorted.flatMap((g) => g.players))].filter((pid) => playersById[pid]);
@@ -451,11 +452,13 @@ function Home({ me, playersById }) {
         </div>`}
         <div class="game-list">
           ${shown.map((g) => html`<${GameRow} key=${g.code} g=${g} playersById=${playersById} href=${`#/g/${g.code}`}
-            onDelete=${() => confirmDelete(g.code)} onEnd=${() => endGameEarly(g)} onRecap=${() => go(`/g/${g.code}/recap`)} />`)}
+            onDelete=${() => confirmDelete(g.code)} onEnd=${() => endGameEarly(g)} onRecap=${() => makeRecap(g)} />`)}
         </div>
         ${sorted.length > 0 && !shown.length && html`<p class="muted center">No games match.</p>`}
       </section>
       ${joinOpen && html`<${JoinSheet} onClose=${() => setJoinOpen(false)} />`}
+      ${recap && html`<${RecapModal} recap=${recap} code=${recap.game.code} playersById=${playersById}
+        onFeature=${(id) => makeRecap(recap.game, id)} onClose=${closeRecap} />`}
     </main>`;
 }
 
@@ -1577,49 +1580,53 @@ function RecapModal({ recap, code, playersById, onFeature, onClose, title = 'Gam
 
 // ───────────────────────── game screens ─────────────────────────
 
-function GameScreen({ code, me, playersById, autoRecap }) {
-  const game = useWatch((cb) => store.watchDoc('games', code, cb), [code]);
-  const thumbList = useWatch((cb) => store.watchWhere('thumbs', 'gameId', '==', code, cb), [code]);
-  const thumbs = useMemo(() => Object.fromEntries((thumbList || []).map((t) => [t.id, t])), [thumbList]);
-  const [joining, setJoining] = useState(false);
+/** Builds a game's recap image. thumbs is optional: without it the game's photos are fetched once. */
+function useRecap(playersById) {
   const [recap, setRecap] = useState(null);
-  const [facing, setFacing] = useState(() => loadPref(facingKey(code), loadPref(FACING_KEY, 'user')));
-  const pickFacing = (f) => { setFacing(f); savePref(facingKey(code), f); savePref(FACING_KEY, f); };
-
-  const makeRecap = async (featuredId) => {
+  const makeRecap = async (game, featuredId, thumbs) => {
     if (!game) return;
-    if (typeof featuredId !== 'string') featuredId = undefined; // called from an event
+    if (typeof featuredId !== 'string') featuredId = undefined; // called from a click/event
     if (recap?.url) URL.revokeObjectURL(recap.url);
-    const cached = featuredId && recap?.boards;
-    setRecap({ boards: cached, featuredId });
+    const same = recap?.game?.code === game.code;
+    const cached = featuredId && same && recap?.boards;
+    setRecap({ game, boards: cached, featuredId });
     try {
-      const boards = cached || (game.mode === 'bingo' ? await store.getWhere('boards', 'gameId', '==', code) : []);
+      const [boards, thumbMap] = await Promise.all([
+        cached || (game.mode === 'bingo' ? store.getWhere('boards', 'gameId', '==', game.code) : []),
+        thumbs || (same && recap?.thumbs) || store.getWhere('thumbs', 'gameId', '==', game.code).then((l) => Object.fromEntries(l.map((t) => [t.id, t]))),
+      ]);
       if (!featuredId && boards.length) {
         // Default to the winner's card, else the top score.
         const top = boards.find((b) => b.playerId === game.winner)
           || boards.slice().sort((a, b) => G.scoreBoard(b).points - G.scoreBoard(a).points)[0];
         featuredId = top.playerId;
       }
-      const blob = await renderRecap({ game, boards, thumbs, playersById, featuredId });
-      setRecap({ blob, url: URL.createObjectURL(blob), boards, featuredId });
+      const blob = await renderRecap({ game, boards, thumbs: thumbMap, playersById, featuredId });
+      setRecap({ game, blob, url: URL.createObjectURL(blob), boards, thumbs: thumbMap, featuredId });
     } catch (e) {
       setRecap(null);
       toast(`Couldn't make the recap: ${e.message}`, 'error');
     }
   };
   const closeRecap = () => { if (recap?.url) URL.revokeObjectURL(recap.url); setRecap(null); };
+  return { recap, makeRecap, closeRecap };
+}
+
+function GameScreen({ code, me, playersById }) {
+  const game = useWatch((cb) => store.watchDoc('games', code, cb), [code]);
+  const thumbList = useWatch((cb) => store.watchWhere('thumbs', 'gameId', '==', code, cb), [code]);
+  const thumbs = useMemo(() => Object.fromEntries((thumbList || []).map((t) => [t.id, t])), [thumbList]);
+  const [joining, setJoining] = useState(false);
+  const [facing, setFacing] = useState(() => loadPref(facingKey(code), loadPref(FACING_KEY, 'user')));
+  const pickFacing = (f) => { setFacing(f); savePref(facingKey(code), f); savePref(FACING_KEY, f); };
+
+  const { recap, makeRecap, closeRecap } = useRecap(playersById);
+  const recapThis = (featuredId) => makeRecap(game, featuredId, thumbs);
   useEffect(() => {
-    addEventListener('nycc:recap', makeRecap);
-    return () => removeEventListener('nycc:recap', makeRecap);
+    const on = () => recapThis();
+    addEventListener('nycc:recap', on);
+    return () => removeEventListener('nycc:recap', on);
   });
-  // #/g/CODE/recap (swipe on a finished game in the list) opens straight into the recap once photos are in.
-  const autoDone = useRef(false);
-  useEffect(() => {
-    if (!autoRecap || autoDone.current || !game || thumbList === undefined) return;
-    autoDone.current = true;
-    history.replaceState(null, '', `#/g/${code}`);
-    makeRecap();
-  }, [autoRecap, game, thumbList]);
 
   if (game === undefined) return html`<main class="screen"><p class="muted center">Loading game ${code}…</p></main>`;
   if (game === null) return html`
@@ -1685,10 +1692,10 @@ function GameScreen({ code, me, playersById, autoRecap }) {
       <//>
       <div class="game-footer">
         ${isPlayer && !game.winner && !(game.endsAt && Date.now() >= game.endsAt) && html`<button class="btn small" onClick=${() => endGameEarly(game)}>🏁 End game</button>`}
-        <button class="btn small" onClick=${makeRecap}>🖼️ Game recap</button>
+        <button class="btn small" onClick=${() => recapThis()}>🖼️ Game recap</button>
         <button class="btn small danger" onClick=${async () => { if (await confirmDelete(code)) go('/'); }}>🗑️ Delete game</button>
       </div>
-      ${recap && html`<${RecapModal} recap=${recap} code=${code} playersById=${playersById} onFeature=${makeRecap} onClose=${closeRecap} />`}
+      ${recap && html`<${RecapModal} recap=${recap} code=${code} playersById=${playersById} onFeature=${recapThis} onClose=${closeRecap} />`}
     </main>`;
 }
 
@@ -2435,7 +2442,7 @@ function App() {
   else if (route[0] === 'stats') body = html`<${StatsScreen} me=${me} players=${players} playersById=${playersById} focus=${route[1]} key=${route[1] || 'all'} />`;
   else if (route[0] === 'items') body = html`<${ItemsScreen} bank=${bank} />`;
   else if (route[0] === 'new') body = html`<${NewGame} mode=${['versus', 'endless'].includes(route[1]) ? route[1] : 'bingo'} me=${me} players=${players} key=${route[1]} />`;
-  else if (route[0] === 'g' && route[1]) body = html`<${GameScreen} code=${route[1].toUpperCase()} me=${me} playersById=${playersById} key=${route[1]} autoRecap=${route[2] === 'recap'} />`;
+  else if (route[0] === 'g' && route[1]) body = html`<${GameScreen} code=${route[1].toUpperCase()} me=${me} playersById=${playersById} key=${route[1]} />`;
   else body = html`<${Home} me=${me} playersById=${playersById} />`;
 
   return html`${body}<${SyncIndicator} /><${Toasts} />`;
