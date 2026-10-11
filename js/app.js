@@ -1691,8 +1691,8 @@ function GameScreen({ code, me, playersById }) {
         <${Screen} key=${isPlayer ? 'player' : 'watcher'} game=${game} me=${me} playersById=${playersById} thumbs=${thumbs} isPlayer=${isPlayer} onRematch=${rematch} />
       <//>
       <div class="game-footer">
-        ${isPlayer && !game.winner && !(game.endsAt && Date.now() >= game.endsAt) && html`<button class="btn small" onClick=${() => endGameEarly(game)}>🏁 End game</button>`}
-        <button class="btn small" onClick=${() => recapThis()}>🖼️ Game recap</button>
+        ${isDone(game) ? html`<button class="btn small" onClick=${() => recapThis()}>🖼️ Game recap</button>`
+          : isPlayer && html`<button class="btn small" onClick=${() => endGameEarly(game)}>🏁 End game</button>`}
         <button class="btn small danger" onClick=${async () => { if (await confirmDelete(code)) go('/'); }}>🗑️ Delete game</button>
       </div>
       ${recap && html`<${RecapModal} recap=${recap} code=${code} playersById=${playersById} onFeature=${recapThis} onClose=${closeRecap} />`}
