@@ -1392,6 +1392,26 @@ function PhotoButtons({ onFile, label = 'Take photo' }) {
     </div>`;
 }
 
+/** Two round buttons beside an item: in-app camera, or pick from the photo library. */
+function QuickSnap({ onFile }) {
+  const capture = useContext(CameraFacing) === 'environment' ? 'environment' : 'user';
+  const [camera, setCamera] = useState(false);
+  const nativeRef = useRef(null);
+  const handle = (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (f) onFile(f);
+  };
+  return html`<div class="quick-btns">
+    ${hasLiveCamera
+      ? html`<button class="quick-btn snap" aria-label="Snap it" onClick=${() => setCamera(true)}>📸</button>`
+      : html`<label class="quick-btn snap" aria-label="Snap it">📸<input type="file" accept="image/*" capture=${capture} onChange=${handle} hidden /></label>`}
+    <label class="quick-btn" aria-label="From iPhone">🖼️<input type="file" accept="image/*" onChange=${handle} hidden /></label>
+    ${hasLiveCamera && html`<input ref=${nativeRef} type="file" accept="image/*" capture=${capture} onChange=${handle} hidden />`}
+    ${camera && html`<${CameraView} onFile=${onFile} onClose=${() => setCamera(false)} onFallback=${() => nativeRef.current?.click()} />`}
+  </div>`;
+}
+
 /** A row of small icon buttons along the bottom of a sheet. tools = [icon, label, onClick] (falsy entries skipped). */
 function IconTools({ tools }) {
   const list = tools.filter(Boolean);
@@ -2355,7 +2375,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       <div class=${'endless-slots' + (single ? ' single' : '')}>
         ${st.active.map((slot) => slot.pick
           ? html`<${PickSlot} key=${slot.id} slot=${slot} game=${game} me=${me} isPlayer=${isPlayer} name=${name} onDeal=${deal} />`
-          : html`<div class="endless-slot" key=${slot.id}>
+          : html`<div class=${'endless-slot' + (canSnap && !single ? ' quick' : '')} key=${slot.id}>
             <button class=${`endless-card cat-${slot.item.cat}${single ? '' : ' compact'}`} disabled=${single || !canSnap} onClick=${() => setSnapId(slot.id)}>
               <span class="stars">${TIER_STARS[slot.item.tier]}</span>
               <span class="icon">${slot.item.icon}</span>
@@ -2369,10 +2389,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
                 canReroll(game, game.rerolls?.[me.id]) && ['🎲', `Reroll${game.rerolls?.[me.id] ? ` (${game.rerolls[me.id]})` : ''}`, () => reroll(slot)],
                 ['🚫', 'Block', () => confirmBlock(slot.item.text) && block(slot)],
               ]} />
-            </div>` : html`<div class="row slot-actions">
-              <button class="btn primary" onClick=${() => setSnapId(slot.id)}>📸 Snap</button>
-              ${canReroll(game, game.rerolls?.[me.id]) && html`<button class="btn ghost" onClick=${() => reroll(slot)}>🎲 Reroll</button>`}
-            </div>`)}
+            </div>` : html`<${QuickSnap} onFile=${(f) => capture(slot, f).catch((e) => toast(e.message, 'error'))} />`)}
           </div>`)}
       </div>
       ${turns && isPlayer && st.turn !== me.id && html`<p class="muted center">Waiting for ${name(st.turn)} to snap one…</p>`}
