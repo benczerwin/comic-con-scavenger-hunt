@@ -1332,14 +1332,81 @@ function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compa
 }
 
 
+// The shared item list (settings/itemBank): every change rewrites the doc with the latest of each field.
+let currentBank = null;
+function bankActions(bank) {
+  const disabled = new Set(bank?.disabled || []);
+  const archived = new Set(bank?.archived || []);
+  const custom = bank?.custom || [];
+  const overrides = bank?.overrides || {};
+  const all = [...custom.map((c) => ({ ...normalizeItem(c), custom: true })), ...G.withOverrides(bank)];
+  const key = (it) => it.orig || it.text;
+  const save = (next) => store.put('settings', BANK_ID, {
+    disabled: bank?.disabled || [], custom, presets: bank?.presets || [], overrides, archived: bank?.archived || [], ...next, updatedAt: Date.now(),
+  }).catch((e) => toast(`Sync problem: ${e.message}`, 'error'));
+  /** Returns false (and says why) when the change can't be saved. */
+  const saveEdit = (orig, it) => {
+    if (all.some((x) => key(x) !== key(orig) && x.text.toLowerCase() === it.text.toLowerCase())) { toast('Another item already has that name.', 'error'); return false; }
+    if (orig.custom) {
+      // Your own item: rewrite it in place (and carry its on/off over to a new name).
+      const d = [...disabled].map((t) => (t === orig.text ? it.text : t));
+      save({ custom: custom.map((c) => (c.text === orig.text ? { ...c, ...it } : c)), disabled: d });
+    } else {
+      const base = ITEMS.find((x) => x.text === key(orig));
+      const ov = { ...overrides };
+      const changed = ['text', 'tier', 'cat'].some((k) => it[k] !== base[k]) || itemIconName(it.icon) !== itemIconName(base.icon)
+        || !!it.mine !== !!base.mine;
+      if (changed) ov[base.text] = { icon: it.icon, text: it.text, tier: it.tier, cat: it.cat, mine: !!it.mine };
+      else delete ov[base.text];
+      save({ overrides: ov });
+    }
+    toast('Saved', 'good');
+    return true;
+  };
+  const setArchived = (it, on) => {
+    const a = new Set(archived);
+    on ? a.add(key(it)) : a.delete(key(it));
+    save({ archived: [...a] });
+    toast(on ? `Archived "${it.text}". Find it under Archived.` : `"${it.text}" is back in the list.`);
+  };
+  const resetItem = (it) => {
+    const ov = { ...overrides };
+    delete ov[key(it)];
+    save({ overrides: ov });
+    toast(`Back to "${key(it)}"`);
+  };
+  const removeCustom = (text) => {
+    if (!confirm(`Delete "${text}"?`)) return false;
+    save({ custom: custom.filter((c) => c.text !== text), disabled: [...disabled].filter((t) => t !== text) });
+    return true;
+  };
+  /** The list's current version of an item seen in a game (it may have been renamed since). */
+  const find = (item) => all.find((x) => x.text === item.text) || all.find((x) => x.orig === item.text) || null;
+  return { all, key, archived, save, saveEdit, setArchived, resetItem, removeCustom, find };
+}
+
+/** Edit sheet for a list item opened from inside a game. Changes the shared list (future games), not this game. */
+function ListItemEditor({ item, onClose }) {
+  const acts = bankActions(currentBank);
+  const it = acts.find(item);
+  if (!it) { toast("That item isn't in the list any more.", 'error'); onClose(); return null; }
+  return html`<${ItemEditSheet} item=${it} archived=${acts.archived.has(acts.key(it))} used=${null}
+    note="Changes the hunt item list for future games."
+    onSave=${(next) => acts.saveEdit(it, next) && onClose()} onClose=${onClose}
+    onArchive=${(on) => { acts.setArchived(it, on); onClose(); }}
+    onReset=${it.orig ? () => { acts.resetItem(it); onClose(); } : null}
+    onDelete=${it.custom ? () => acts.removeCustom(it.text) && onClose() : null} />`;
+}
+
 /** Sheet for changing one item in the list. */
-function ItemEditSheet({ item, onSave, onClose, onReset, onDelete, archived, onArchive, used }) {
+function ItemEditSheet({ item, onSave, onClose, onReset, onDelete, archived, onArchive, used, note }) {
   useScrollLock();
   const sheet = useSwipeDown(onClose);
   return html`<div class="modal-bg" onClick=${(e) => e.target === e.currentTarget && onClose()}>
     <div class="modal" ref=${sheet}>
       <button class="x" onClick=${onClose} aria-label="Close">×</button>
       <h2 class="sheet-title">Edit item</h2>
+      ${note && html`<p class="muted small">${note}</p>`}
       ${(item.orig || used !== null) && html`<p class="muted small">${item.orig ? `Originally "${item.orig}". ` : ''}${used !== null ? `Used in games ${used} time${used === 1 ? '' : 's'}.` : ''}</p>`}
       <${ItemForm} initial=${{ ...item, mine: isMine(item) }} submitLabel="Save changes" onSubmit=${onSave} onCancel=${onClose}
         extra=${html`<button type="button" class="btn small ghost" onClick=${() => onArchive(!archived)}>${ic('archive')} ${archived ? 'Unarchive' : 'Archive'}</button>`} />
@@ -1371,42 +1438,10 @@ function ItemsScreen({ bank }) {
   const key = (it) => it.orig || it.text; // what on/off is stored under
   const [editing, setEditing] = useState(null); // item being edited
 
-  const save = (next) => store.put('settings', BANK_ID, {
-    disabled: bank?.disabled || [], custom, presets: bank?.presets || [], overrides, archived: bank?.archived || [], ...next, updatedAt: Date.now(),
-  }).catch((e) => toast(`Sync problem: ${e.message}`, 'error'));
-
-  const saveEdit = (orig, it) => {
-    if (all.some((x) => x !== orig && x.text.toLowerCase() === it.text.toLowerCase())) return toast('Another item already has that name.', 'error');
-    if (orig.custom) {
-      // Your own item: rewrite it in place (and carry its on/off over to a new name).
-      const d = [...disabled].map((t) => (t === orig.text ? it.text : t));
-      save({ custom: custom.map((c) => (c.text === orig.text ? { ...c, ...it } : c)), disabled: d });
-    } else {
-      const base = ITEMS.find((x) => x.text === key(orig));
-      const ov = { ...overrides };
-      const changed = ['text', 'tier', 'cat'].some((k) => it[k] !== base[k]) || itemIconName(it.icon) !== itemIconName(base.icon)
-        || !!it.mine !== !!base.mine;
-      if (changed) ov[base.text] = { icon: it.icon, text: it.text, tier: it.tier, cat: it.cat, mine: !!it.mine };
-      else delete ov[base.text];
-      save({ overrides: ov });
-    }
-    setEditing(null);
-    toast('Saved', 'good');
-  };
-  const setArchived = (it, on) => {
-    const a = new Set(archived);
-    on ? a.add(key(it)) : a.delete(key(it));
-    save({ archived: [...a] });
-    setEditing(null);
-    toast(on ? `Archived "${it.text}". Find it under Archived.` : `"${it.text}" is back in the list.`);
-  };
-  const resetItem = (it) => {
-    const ov = { ...overrides };
-    delete ov[key(it)];
-    save({ overrides: ov });
-    setEditing(null);
-    toast(`Back to "${key(it)}"`);
-  };
+  const { save, saveEdit: saveEditRaw, setArchived: setArchivedRaw, resetItem: resetItemRaw } = bankActions(bank);
+  const saveEdit = (orig, it) => { if (saveEditRaw(orig, it)) setEditing(null); };
+  const setArchived = (it, on) => { setArchivedRaw(it, on); setEditing(null); };
+  const resetItem = (it) => { resetItemRaw(it); setEditing(null); };
 
   const toggle = (text) => {
     const d = new Set(disabled);
@@ -1892,13 +1927,14 @@ const loadFull = (id) => {
 };
 
 function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel, onFile, onNoPhoto, onRemove, removeLabel, onEdit,
-  onReroll, onBlock, rerolls = 0, onClose, note, onPrev, onNext, position, prefetch }) {
+  onReroll, onBlock, rerolls = 0, onClose, note, onPrev, onNext, position, prefetch, onListEdit }) {
   const [full, setFull] = useState(() => fullCache.get(photoId) || null);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   useScrollLock();
   const sheet = useSwipeDown(onClose);
   useSwipeSides(sheet, onPrev, onNext);
+  useEffect(() => setEditing(false), [item.text]); // swiping to another entry reuses this sheet
 
   useEffect(() => {
     setFull(fullCache.get(photoId) || null);
@@ -1951,6 +1987,7 @@ function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel,
           onBlock && [ic('ban', 22), 'Block', () => confirmBlock(item.text) && onBlock()],
           // Shown right away (greyed until the full photo arrives) so the sheet doesn't jump when it does.
           photoId && [ic('download', 22), 'Save photo', () => full && saveDataUrl(full, item.text), !full],
+          onListEdit && [ic('pencil', 22), 'Edit item', onListEdit],
         ]} />`}
         ${busy && html`<div class="busy"><div class="spinner"></div>Uploading…</div>`}
       </div>
@@ -2681,6 +2718,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
   const turns = st.turnMode === 'turns';
   const canSnap = isPlayer && !over && (!turns || st.turn === me.id);
   const name = (pid) => (pid === me.id ? 'You' : firstName(playersById[pid]));
+  const [listEdit, setListEdit] = useState(null); // history item being edited in the hunt list
   const [histF, setHistF] = useState([]); // filter for "Everything so far"
   const histKind = (h) => (G.isFind(h) ? (h.photo ? 'photo' : 'found') : h.rerolled ? 'rerolled' : h.expired ? 'expired' : h.blocked ? 'blocked' : 'skipped');
   const allHistory = (game.history || []).map((h, i) => ({ ...h, i })).reverse();
@@ -2848,15 +2886,17 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       const k = history.findIndex((h) => h.i === open);
       const found = G.isFind(viewing);
       const why = viewing.rerolled ? 'Rerolled' : viewing.blocked ? 'Blocked' : viewing.expired ? `Swapped out after ${G.ENDLESS_EXPIRE_AFTER} other finds` : 'Skipped';
-      return html`<${SquareModal} key=${open} item=${viewing.item} photoId=${viewing.photo} found=${found}
+      return html`<${SquareModal} item=${viewing.item} photoId=${viewing.photo} found=${found}
         thumb=${viewing.photo && thumbs[viewing.photo]?.thumb} by=${found ? playersById[viewing.by] : null} at=${viewing.at}
         note=${found ? null : `${why}${viewing.by ? ` by ${name(viewing.by)}` : ''}`}
         position=${`${k + 1} of ${history.length}`}
         prefetch=${[history[k - 1]?.photo, history[k + 1]?.photo]}
         onPrev=${k > 0 ? () => setOpen(history[k - 1].i) : null}
         onNext=${k < history.length - 1 ? () => setOpen(history[k + 1].i) : null}
+        onListEdit=${() => setListEdit(viewing.item)}
         canAct=${false} onClose=${() => setOpen(null)} />`;
     })()}
+    ${listEdit && html`<${ListItemEditor} item=${listEdit} onClose=${() => setListEdit(null)} />`}
   `;
 }
 
@@ -2902,6 +2942,7 @@ function App() {
   const me = meId ? playersById[meId] : null;
   const bank = useWatch((cb) => store.watchDoc('settings', BANK_ID, cb), []);
   itemPool = useMemo(() => G.buildPool(bank), [bank]);
+  currentBank = bank;
 
   const pick = (id) => { saveMe(id); setMeId(id); if (route[0] === 'profile') go('/'); };
   const switchPlayer = () => { saveMe(''); setMeId(null); };
