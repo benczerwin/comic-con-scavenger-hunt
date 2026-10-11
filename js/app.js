@@ -141,7 +141,7 @@ const poolFor = (g) => {
   const tiers = g.tiers?.length ? new Set(g.tiers) : null;
   // it.group lets older games that picked the previous categories keep working
   return itemPool.filter((it) => (cats ? cats.has(it.cat) || cats.has(it.group) : m === 'all' || itemKind(it) === m)
-    && (!tiers || tiers.has(it.tier)) && (!g.mineOnly || it.mine || it.custom));
+    && (!tiers || tiers.has(it.tier)) && (!g.mineOnly || isMine(it)));
 };
 const someCats = (cats) => (cats?.length && cats.length < ALL_CATS.length ? cats : undefined); // store only a real subset
 const ALL_TIERS = ['e', 'm', 'h'];
@@ -633,7 +633,7 @@ const rerollCap = (g) => (g.noSwaps ? 0 : g.rerollLimit || Infinity);
 const canReroll = (g, used = 0) => used < rerollCap(g);
 
 function MineToggle({ on, set }) {
-  const n = itemPool.filter((it) => it.mine || it.custom).length;
+  const n = itemPool.filter(isMine).length;
   return html`<label class="toggle"><input type="checkbox" checked=${on} onChange=${(e) => set(e.target.checked)} />
     <span>Only my list <small>(${n} items: your wish list + items you added)</small></span></label>`;
 }
@@ -1193,6 +1193,7 @@ const TIER_LABELS = { e: 'Easy', m: 'Medium', h: 'Hard' };
 function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compact }) {
   const [icon, setIcon] = useState(itemIconName(initial?.icon) || 'camera');
   const [picking, setPicking] = useState(false);
+  const [mine, setMine] = useState(initial ? initial.mine !== false : true);
   const [text, setText] = useState(initial?.text || '');
   const [tier, setTier] = useState(initial?.tier && initial.tier !== 'free' ? initial.tier : 'e');
   const [cat, setCat] = useState(initial?.cat && initial.cat !== 'free' ? normalizeItem(initial).cat : 'desc');
@@ -1201,7 +1202,7 @@ function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compa
     e.preventDefault();
     const t = text.trim();
     if (!t) return toast('Describe what to find.', 'error');
-    onSubmit({ icon, text: t.slice(0, 80), tier, cat });
+    onSubmit({ icon, text: t.slice(0, 80), tier, cat, ...(compact ? {} : { mine }) });
     if (!initial) { setIcon('camera'); setText(''); }
   };
 
@@ -1221,6 +1222,8 @@ function ItemForm({ initial, submitLabel = 'Add item', onSubmit, onCancel, compa
       <select class="text" value=${cat} onChange=${(e) => setCat(e.target.value)} aria-label="Category">
         ${Object.entries(CATEGORY_LABELS).map(([k, l]) => html`<option value=${k}>${l}</option>`)}
       </select>
+      ${!compact && html`<label class="toggle mine-toggle"><input type="checkbox" checked=${mine} onChange=${(e) => setMine(e.target.checked)} />
+        <span>Mark as mine <small>(adds it to your list and the Mine filter)</small></span></label>`}
       <div class="row end">
         ${onCancel && html`<button type="button" class="btn ghost small" onClick=${onCancel}>Cancel</button>`}
         <button class="btn primary small">${submitLabel}</button>
@@ -1252,6 +1255,7 @@ function ItemsScreen({ bank }) {
     save({ custom: [it, ...custom] });
     toast(`Added: ${it.text}`, 'good');
   };
+  const setMine = (text, mine) => save({ custom: custom.map((c) => (c.text === text ? { ...c, mine } : c)) });
   const removeCustom = (text) => {
     if (!confirm(`Delete "${text}"?`)) return;
     save({ custom: custom.filter((c) => c.text !== text), disabled: [...disabled].filter((t) => t !== text) });
@@ -1287,7 +1291,7 @@ function ItemsScreen({ bank }) {
   const filtered = all.filter((it) =>
     (hideStars || tier === 'all' || it.tier === tier) &&
     (catF === 'all' || it.cat === catF) &&
-    (show === 'all' || (show === 'on' && !disabled.has(it.text)) || (show === 'off' && disabled.has(it.text)) || (show === 'custom' && (it.custom || it.mine))) &&
+    (show === 'all' || (show === 'on' && !disabled.has(it.text)) || (show === 'off' && disabled.has(it.text)) || (show === 'custom' && isMine(it))) &&
     (!needle || it.text.toLowerCase().includes(needle)));
   const byCat = Object.keys(CATEGORY_LABELS).map((cat) => [cat, filtered.filter((i) => i.cat === cat)]).filter(([, xs]) => xs.length);
   const onCount = all.filter((i) => !disabled.has(i.text)).length;
@@ -1339,7 +1343,10 @@ function ItemsScreen({ bank }) {
             const on = !disabled.has(it.text);
             return html`<div class="item-row ${on ? '' : 'off'}" key=${it.text}>
               <span class="icon">${itemIcon(it.icon)}</span>
-              <span class="grow">${it.text}${(it.custom || it.mine) && html` <i class="badge">mine</i>`}<small class="stars">${TIER_STARS[it.tier]}</small></span>
+              <span class="grow">${it.text}${it.custom
+                ? html` <button class=${'badge' + (isMine(it) ? '' : ' off')} aria-pressed=${isMine(it)} title="Tap to add to or remove from your list"
+                    onClick=${() => setMine(it.text, !isMine(it))}>${isMine(it) ? 'mine' : '+ mine'}</button>`
+                : isMine(it) && html` <i class="badge">mine</i>`}<small class="stars">${TIER_STARS[it.tier]}</small></span>
               ${it.custom && html`<button class="icon-btn round" aria-label="Delete item" onClick=${() => removeCustom(it.text)}>${TRASH_SVG}</button>`}
               <label class="switch"><input type="checkbox" checked=${on} onChange=${() => toggle(it.text)} /><span></span></label>
             </div>`;
@@ -1419,6 +1426,9 @@ const usePrefList = (key) => {
   return [v, (x) => { setV(x); savePref(key, JSON.stringify(x)); }];
 };
 /** useState that remembers its (string) value on this device. */
+/** On "my list": the built-in wish list, plus items you added (unless you unticked "mine" for one). */
+const isMine = (it) => !!it.mine || (!!it.custom && it.mine !== false);
+
 const usePref = (key, dflt) => {
   const [v, setV] = useState(() => loadPref(key, dflt));
   return [v, (x) => { setV(x); savePref(key, x); }];
