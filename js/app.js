@@ -656,6 +656,10 @@ function Choice({ options, value, onChange, grid }) {
   </div>`;
 }
 
+const GAME_PRESETS_KEY = 'nycc-game-presets';
+const loadGamePresets = () => { try { const v = JSON.parse(loadPref(GAME_PRESETS_KEY, '[]')); return Array.isArray(v) ? v : []; } catch { return []; } };
+const saveGamePresets = (list) => savePref(GAME_PRESETS_KEY, JSON.stringify(list));
+
 function NewGame({ mode, me, players }) {
   const isBingo = mode === 'bingo';
   const isEndless = mode === 'endless';
@@ -681,7 +685,48 @@ function NewGame({ mode, me, players }) {
   const [selected, setSelected] = useState([me.id]);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => setConnect(G.defaultConnect(size)), [size]);
+  // Saved game setups ("presets") for this mode, kept on this device.
+  const [presets, setPresets] = useState(loadGamePresets);
+  const modePresets = presets.filter((p) => p.mode === mode);
+  const [presetId, setPresetId] = useState('');
+  const keepConnect = useRef(false);
+  const snapshot = () => ({ size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, cats, mineOnly, tiers, backups,
+    rerollLimit: Number.isFinite(rerollLimit) ? rerollLimit : 'inf', place, hand, tier, slots, turnMode });
+  const applyPreset = (id) => {
+    setPresetId(id);
+    const p = modePresets.find((x) => x.id === id);
+    if (!p) return;
+    const v = p.s;
+    keepConnect.current = v.size !== size; // the size change below must not reset "in a row"
+    const set = (fn, val) => val !== undefined && fn(val);
+    set(setSize, v.size); set(setDifficulty, v.difficulty); set(setWinRule, v.winRule); set(setMinutes, v.minutes);
+    set(setFreeCenter, v.freeCenter); set(setSameCard, v.sameCard); set(setConnect, v.connect); set(setCoop, v.coop);
+    set(setCats, v.cats); set(setMineOnly, v.mineOnly); set(setTiers, v.tiers); set(setBackups, v.backups);
+    set(setRerollLimit, v.rerollLimit === 'inf' ? Infinity : v.rerollLimit); set(setPlace, v.place); set(setHand, v.hand);
+    set(setTier, v.tier); set(setSlots, v.slots); set(setTurnMode, v.turnMode);
+  };
+  const savePreset = () => {
+    const current = modePresets.find((x) => x.id === presetId);
+    const name = prompt('Name this preset:', current?.name || '')?.trim();
+    if (!name) return;
+    const existing = presets.find((x) => x.mode === mode && x.name.toLowerCase() === name.toLowerCase());
+    if (existing && existing.id !== presetId && !confirm(`Replace your "${existing.name}" preset?`)) return;
+    const id = existing?.id || G.uid();
+    const next = [...presets.filter((x) => x.id !== id), { id, name, mode, s: snapshot() }];
+    setPresets(next); saveGamePresets(next); setPresetId(id);
+    toast(`Saved "${name}"`, 'good');
+  };
+  const deletePreset = () => {
+    const p = modePresets.find((x) => x.id === presetId);
+    if (!p || !confirm(`Delete the "${p.name}" preset?`)) return;
+    const next = presets.filter((x) => x.id !== p.id);
+    setPresets(next); saveGamePresets(next); setPresetId('');
+  };
+
+  useEffect(() => {
+    if (keepConnect.current) { keepConnect.current = false; return; }
+    setConnect(G.defaultConnect(size));
+  }, [size]);
 
   const toggle = (pid) => {
     if (pid === me.id) return;
@@ -708,6 +753,14 @@ function NewGame({ mode, me, players }) {
     <main class="screen">
       <nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>
       <h1 class="title">${isBingo ? 'New Solo Series' : isEndless ? 'New Endless Hunt' : 'New Crossover'}</h1>
+      ${modePresets.length > 0 && html`<div class="row preset-row">
+        <select class=${'text small-select grow' + (presetId ? ' active' : '')} value=${presetId} aria-label="Presets"
+          onChange=${(e) => applyPreset(e.target.value)}>
+          <option value="">Choose a preset…</option>
+          ${modePresets.map((p) => html`<option value=${p.id}>${p.name}</option>`)}
+        </select>
+        ${presetId && html`<button class="btn small ghost" onClick=${deletePreset}>${ic('trash')} Delete</button>`}
+      </div>`}
 
       ${isEndless ? html`<section class="panel">
         <h2>What kind of items?</h2>
@@ -797,6 +850,7 @@ function NewGame({ mode, me, players }) {
       ${!cats.length ? html`<div class="banner warn">Pick at least one category.</div>`
         : tooFew && html`<div class="banner warn">Not enough items turned on${isEndless ? '' : ` for a ${size}×${size} board`}. Turn more on in the item list or pick more categories.</div>`}
       <button class="btn primary huge" disabled=${busy || tooFew} onClick=${create}>${busy ? 'Creating…' : 'Start the hunt!'}</button>
+      <button class="btn ghost save-setup" onClick=${savePreset}>${ic('save')} ${presetId ? 'Update or save as a new preset' : 'Save these settings as a preset'}</button>
     </main>`;
 }
 
