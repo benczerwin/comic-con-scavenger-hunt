@@ -16,11 +16,25 @@ const saveMe = (id) => { try { localStorage.setItem(ME_KEY, id); } catch {} };
 const go = (path) => { location.hash = path; };
 const gameUrl = (code) => `${location.origin}${location.pathname}#/g/${code}`;
 
+// Where you came from, so a game opened from another screen (e.g. a player's stats) can go back there,
+// landing at the same scroll spot.
+let lastHash = location.hash, prevHash = '', restoreNext = false;
+const scrollSpots = {};
+const goBack = (hash) => { restoreNext = true; location.hash = hash; };
+
 function useHash() {
   const parse = () => location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   const [route, setRoute] = useState(parse);
   useEffect(() => {
-    const on = () => { setRoute(parse()); window.scrollTo(0, 0); };
+    const on = () => {
+      scrollSpots[lastHash] = window.scrollY;
+      prevHash = lastHash; lastHash = location.hash;
+      const y = restoreNext ? scrollSpots[location.hash] || 0 : 0;
+      restoreNext = false;
+      setRoute(parse());
+      window.scrollTo(0, y);
+      if (y) [60, 300].forEach((t) => setTimeout(() => window.scrollTo(0, y), t)); // after data fills the page
+    };
     addEventListener('hashchange', on);
     return () => removeEventListener('hashchange', on);
   }, []);
@@ -404,14 +418,17 @@ function Home({ me, playersById }) {
   const games = useWatch((cb) => store.watchWhere('games', 'players', 'array-contains', me.id, cb), [me.id]);
   const [joinOpen, setJoinOpen] = useState(false);
   const sorted = (games || []).slice().sort((a, b) => b.createdAt - a.createdAt);
-  const [day, setDay] = useState('all');
-  const [who, setWho] = useState('all');
-  const [status, setStatus] = useState('all');
+  // Filters stick between visits (per device). A saved date or player that no longer has games falls back to all.
+  const [daysSaved, setDays] = usePrefList('nycc-home:days');
+  const [whoSaved, setWho] = usePref('nycc-home:who', 'all');
+  const [status, setStatus] = usePref('nycc-home:status', 'all');
   const { recap, makeRecap, closeRecap } = useRecap(playersById);
   const dayKey = (t) => new Date(t).toDateString();
   const days = [...new Set(sorted.map((g) => dayKey(g.createdAt)))];
   const people = [...new Set(sorted.flatMap((g) => g.players))].filter((pid) => playersById[pid]);
-  const shown = sorted.filter((g) => (day === 'all' || dayKey(g.createdAt) === day) && (who === 'all' || g.players.includes(who))
+  const pickedDays = games ? daysSaved.filter((d) => days.includes(d)) : daysSaved;
+  const who = !games || people.includes(whoSaved) ? whoSaved : 'all';
+  const shown = sorted.filter((g) => (!pickedDays.length || pickedDays.includes(dayKey(g.createdAt))) && (who === 'all' || g.players.includes(who))
     && (status === 'all' || (status === 'done') === isDone(g)));
 
 
@@ -456,10 +473,7 @@ function Home({ me, playersById }) {
         ${games === undefined && html`<p class="muted">Loading…</p>`}
         ${games && !sorted.length && html`<p class="muted">No games yet. Start one above!</p>`}
         ${sorted.length > 1 && html`<div class="row game-filters">
-          <select class="text small-select" value=${day} onChange=${(e) => setDay(e.target.value)} aria-label="Filter by date">
-            <option value="all">All dates</option>
-            ${days.map((d) => html`<option value=${d}>${dayLabel(d)}</option>`)}
-          </select>
+          <${DateMulti} days=${days} value=${pickedDays} onChange=${setDays} />
           <select class="text small-select" value=${who} onChange=${(e) => setWho(e.target.value)} aria-label="Filter by player">
             <option value="all">Everyone</option>
             ${people.map((pid) => html`<option value=${pid}>${pid === me.id ? 'Me' : playersById[pid].name}</option>`)}
@@ -505,6 +519,28 @@ function JoinSheet({ onClose }) {
         </div>
       </form>
     </div>`;
+}
+
+/** Pick any number of days (none picked = all dates). value: array of Date.toDateString() keys. */
+function DateMulti({ days, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const picked = value.filter((d) => days.includes(d));
+  useEffect(() => {
+    if (!open) return;
+    const away = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener('pointerdown', away);
+    return () => document.removeEventListener('pointerdown', away);
+  }, [open]);
+  const toggle = (d) => onChange(picked.includes(d) ? picked.filter((x) => x !== d) : days.filter((x) => x === d || picked.includes(x)));
+  const label = !picked.length ? 'All dates' : picked.length === 1 ? dayLabel(picked[0]) : `${picked.length} dates`;
+  return html`<div class="multi-select" ref=${ref}>
+    <button type="button" class="text small-select multi-btn" aria-expanded=${open} onClick=${() => setOpen(!open)}>${label}</button>
+    ${open && html`<div class="multi-pop" role="listbox" aria-multiselectable="true">
+      <label class="multi-opt"><input type="checkbox" checked=${!picked.length} onChange=${() => onChange([])} /> All dates</label>
+      ${days.map((d) => html`<label class="multi-opt" key=${d}><input type="checkbox" checked=${picked.includes(d)} onChange=${() => toggle(d)} /> ${dayLabel(d)}</label>`)}
+    </div>`}
+  </div>`;
 }
 
 const dayLabel = (key) => {
@@ -855,13 +891,14 @@ function CollageScreen({ me, playersById }) {
   const games = useWatch((cb) => store.watchAll('games', cb), []);
   const [picked, setPicked] = useState(() => new Set());
   const [onlyMine, setOnlyMine] = useState(true);
-  const [day, setDay] = useState('all');
+  const [daysSaved, setDays] = usePrefList('nycc-collage:days');
   const [recap, setRecap] = useState(null);
 
   const dayKey = (t) => new Date(t).toDateString();
   const mine = (games || []).filter((g) => !onlyMine || g.players?.includes(me.id)).sort((a, b) => b.createdAt - a.createdAt);
   const days = [...new Set(mine.map((g) => dayKey(g.createdAt)))];
-  const list = mine.filter((g) => day === 'all' || dayKey(g.createdAt) === day);
+  const pickedDays = daysSaved.filter((d) => days.includes(d));
+  const list = mine.filter((g) => !pickedDays.length || pickedDays.includes(dayKey(g.createdAt)));
   const toggle = (code) => setPicked((s) => { const n = new Set(s); n.has(code) ? n.delete(code) : n.add(code); return n; });
   const allOn = list.length > 0 && list.every((g) => picked.has(g.code));
   const setAll = () => setPicked(allOn ? new Set() : new Set(list.map((g) => g.code)));
@@ -902,10 +939,7 @@ function CollageScreen({ me, playersById }) {
           <button class="pill" onClick=${setAll} disabled=${!list.length}>${allOn ? 'Select none' : 'Select all'}</button>
         </div>
         ${days.length > 1 && html`<div class="row game-filters collage-filter">
-          <select class="text small-select" value=${day} onChange=${(e) => setDay(e.target.value)} aria-label="Filter by date">
-            <option value="all">All dates</option>
-            ${days.map((d) => html`<option value=${d}>${dayLabel(d)}</option>`)}
-          </select>
+          <${DateMulti} days=${days} value=${pickedDays} onChange=${setDays} />
         </div>`}
       </section>
 
@@ -931,14 +965,29 @@ const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '–');
 function StatsScreen({ me, players, playersById, focus }) {
   const games = useWatch((cb) => store.watchAll('games', cb), []);
   const boards = useWatch((cb) => store.watchAll('boards', cb), []);
+  const [daysSaved, setDays] = usePrefList('nycc-stats:days');
+  const [whoSaved, setWho] = usePref('nycc-stats:who', 'all');
   if (games === undefined || boards === undefined) return html`<main class="screen"><p class="muted center">Crunching numbers…</p></main>`;
 
-  const stats = G.playerStats(games, boards);
-  const catStats = G.categoryStats(games, boards);
+  // Filters: only games on the picked days and/or with the picked player count toward every number below.
+  const dayKey = (t) => new Date(t).toDateString();
+  const allSorted = games.slice().sort((a, b) => b.createdAt - a.createdAt);
+  const days = [...new Set(allSorted.map((g) => dayKey(g.createdAt)))];
+  const people = [...new Set(allSorted.flatMap((g) => g.players || []))].filter((pid) => playersById[pid]);
+  const pickedDays = daysSaved.filter((d) => days.includes(d));
+  const who = people.includes(whoSaved) ? whoSaved : 'all';
+  const fGames = games.filter((g) => (!pickedDays.length || pickedDays.includes(dayKey(g.createdAt))) && (who === 'all' || g.players?.includes(who)));
+  const inSet = new Set(fGames.map((g) => g.code));
+  const fBoards = boards.filter((b) => inSet.has(b.gameId));
+  const filtered = fGames.length !== games.length;
+
+  const stats = G.playerStats(fGames, fBoards);
+  const catStats = G.categoryStats(fGames, fBoards);
   const ranked = (players || []).filter((p) => stats[p.id])
     .sort((a, b) => stats[b.id].wins - stats[a.id].wins || stats[b.id].found - stats[a.id].found);
 
-  if (focus && playersById[focus]) return html`<${PlayerStats} p=${playersById[focus]} s=${stats[focus]} me=${me} playersById=${playersById} />`;
+  if (focus && playersById[focus]) return html`<${PlayerStats} p=${playersById[focus]} s=${stats[focus]} me=${me} playersById=${playersById}
+    note=${filtered ? `Filtered to ${fGames.length} of ${games.length} games (change filters on All players)` : null} />`;
 
   const most = (key) => {
     const top = ranked.slice().sort((a, b) => stats[b.id][key] - stats[a.id][key])[0];
@@ -956,7 +1005,15 @@ function StatsScreen({ me, players, playersById, focus }) {
     <main class="screen">
       <nav class="topbar"><a class="back" href="#/">‹ Home</a></nav>
       <h1 class="title">Player stats</h1>
-      ${!ranked.length && html`<div class="panel center muted">No games played yet. Go hunt!</div>`}
+      ${games.length > 1 && html`<div class="row game-filters stats-filters">
+        <${DateMulti} days=${days} value=${pickedDays} onChange=${setDays} />
+        <select class="text small-select" value=${who} onChange=${(e) => setWho(e.target.value)} aria-label="Filter by player">
+          <option value="all">Everyone</option>
+          ${people.map((pid) => html`<option value=${pid}>${pid === me.id ? 'Me' : playersById[pid].name}</option>`)}
+        </select>
+      </div>
+      <p class="muted small filter-note">${filtered ? `Showing ${fGames.length} of ${games.length} games` : `All ${games.length} games`}</p>`}
+      ${!ranked.length && html`<div class="panel center muted">${filtered ? 'No games match these filters.' : 'No games played yet. Go hunt!'}</div>`}
       ${ranked.length > 1 && html`<section class="panel">
         <h2>Bragging rights</h2>
         <div class="awards">
@@ -1031,7 +1088,7 @@ function CategoryStats({ cs, playersById }) {
   </section>`;
 }
 
-function PlayerStats({ p, s, me, playersById }) {
+function PlayerStats({ p, s, me, playersById, note }) {
   const thumbs = useWatch((cb) => store.watchWhere('thumbs', 'by', '==', p.id, cb), [p.id]);
   if (!s) return html`<main class="screen"><nav class="topbar"><a class="back" href="#/stats">‹ All players</a></nav>
     <div class="panel center muted">${p.name} hasn't played yet.</div></main>`;
@@ -1044,6 +1101,7 @@ function PlayerStats({ p, s, me, playersById }) {
         <div><h1 class="title">${p.name}</h1>
           <p class="muted">${s.games} game${s.games === 1 ? '' : 's'}${p.id === me.id ? ' · That\'s you!' : ''}</p></div>
       </div>
+      ${note && html`<p class="muted small filter-note">${note}</p>`}
 
       <section class="panel">
         <div class="stat-grid big">
@@ -1321,6 +1379,16 @@ const SAVE_KEY = 'nycc-hunt:save-photos';
 const hasLiveCamera = !!navigator.mediaDevices?.getUserMedia;
 const loadPref = (key, dflt) => { try { return localStorage.getItem(key) ?? dflt; } catch { return dflt; } };
 const savePref = (key, val) => { try { localStorage.setItem(key, val); } catch {} };
+/** Like usePref, for a list (stored as JSON). */
+const usePrefList = (key) => {
+  const [v, setV] = useState(() => { try { const x = JSON.parse(loadPref(key, '[]')); return Array.isArray(x) ? x : []; } catch { return []; } });
+  return [v, (x) => { setV(x); savePref(key, JSON.stringify(x)); }];
+};
+/** useState that remembers its (string) value on this device. */
+const usePref = (key, dflt) => {
+  const [v, setV] = useState(() => loadPref(key, dflt));
+  return [v, (x) => { setV(x); savePref(key, x); }];
+};
 
 /** Full-screen in-app camera (getUserMedia). Never fires the flash; front camera by default.
  *  "Wide" asks for the camera's full-sensor 4:3 format and its widest zoom, and the preview
@@ -1483,7 +1551,7 @@ function IconTools({ tools }) {
   const list = tools.filter(Boolean);
   if (!list.length) return null;
   return html`<div class="icon-tools">
-    ${list.map(([icon, label, onClick]) => html`<button class="icon-tool" onClick=${onClick} aria-label=${label}>
+    ${list.map(([icon, label, onClick, disabled]) => html`<button class="icon-tool" onClick=${onClick} aria-label=${label} disabled=${!!disabled}>
       <span class="ic">${icon}</span><small>${label}</small></button>`)}
   </div>`;
 }
@@ -1509,6 +1577,44 @@ function useScrollLock() {
 }
 
 /** Swipe a bottom sheet down to dismiss it. Only starts when the sheet is scrolled to the top. */
+/** Horizontal swipe on a sheet: left = next, right = previous. Ignores mostly-vertical drags (scroll / swipe-down). */
+function useSwipeSides(ref, onPrev, onNext) {
+  const cbs = useRef({});
+  cbs.current = { onPrev, onNext };
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let x0 = null, y0 = 0;
+    const start = (e) => {
+      if (e.touches.length > 1 || e.target.closest('.camera, input, textarea')) { x0 = null; return; }
+      x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+    };
+    // Once a drag is clearly sideways, keep the browser from treating it as its own back/forward swipe.
+    const move = (e) => {
+      if (x0 === null) return;
+      const dx = e.touches[0].clientX - x0, dy = e.touches[0].clientY - y0;
+      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) e.preventDefault();
+    };
+    const end = (e) => {
+      if (x0 === null) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - x0, dy = t.clientY - y0;
+      x0 = null;
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      const go = dx < 0 ? cbs.current.onNext : cbs.current.onPrev;
+      if (go) go();
+    };
+    el.addEventListener('touchstart', start, { passive: true });
+    el.addEventListener('touchmove', move, { passive: false });
+    el.addEventListener('touchend', end);
+    return () => {
+      el.removeEventListener('touchstart', start);
+      el.removeEventListener('touchmove', move);
+      el.removeEventListener('touchend', end);
+    };
+  }, []);
+}
+
 function useSwipeDown(onClose) {
   const ref = useRef(null);
   const closeRef = useRef(onClose);
@@ -1554,12 +1660,13 @@ function useSwipeDown(onClose) {
 
 /** onReroll: swap an unfound square for a random same-star item. onBlock: swap it out and turn it off for good. */
 function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel, onFile, onNoPhoto, onRemove, removeLabel, onEdit,
-  onReroll, onBlock, rerolls = 0, onClose, note }) {
+  onReroll, onBlock, rerolls = 0, onClose, note, onPrev, onNext, position }) {
   const [full, setFull] = useState(null);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   useScrollLock();
   const sheet = useSwipeDown(onClose);
+  useSwipeSides(sheet, onPrev, onNext);
 
   useEffect(() => {
     setFull(null);
@@ -1595,6 +1702,10 @@ function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel,
         ${found && !photoId && html`<p class="found-note">${ic('checkCircle')} Found${by ? html` by <${Emblem} id=${by.emblem} size=${22} /> ${by.name}` : ''}, no photo
           ${at && html`<span class="muted"> · ${new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>`}</p>`}
         ${note && html`<p class="muted center">${note}</p>`}
+        ${position && html`<p class="sheet-pos">
+          <button class="pos-btn" disabled=${!onPrev} onClick=${onPrev} aria-label="Previous">‹</button>
+          <span>${position}</span>
+          <button class="pos-btn" disabled=${!onNext} onClick=${onNext} aria-label="Next">›</button></p>`}
         ${editing ? html`<${ItemForm} initial=${item} submitLabel="Save square" compact
             onSubmit=${(it) => { onEdit(it); setEditing(false); }} onCancel=${() => setEditing(false)} />`
           : canAct && html`<${PhotoButtons} label=${actionLabel} onFile=${wrap(onFile)} />`}
@@ -1604,7 +1715,8 @@ function SquareModal({ item, photoId, found, thumb, by, at, canAct, actionLabel,
           onReroll && [ic('dice', 22), `Reroll${rerolls ? ` (${rerolls})` : ''}`, onReroll],
           onEdit && [ic('pencil', 22), 'Edit', () => setEditing(true)],
           onBlock && [ic('ban', 22), 'Block', () => confirmBlock(item.text) && onBlock()],
-          photoId && full && [ic('download', 22), 'Save photo', () => saveDataUrl(full, item.text)],
+          // Shown right away (greyed until the full photo arrives) so the sheet doesn't jump when it does.
+          photoId && [ic('download', 22), 'Save photo', () => full && saveDataUrl(full, item.text), !full],
         ]} />`}
         ${busy && html`<div class="busy"><div class="spinner"></div>Uploading…</div>`}
       </div>
@@ -1711,6 +1823,8 @@ function useRecap(playersById) {
 }
 
 function GameScreen({ code, me, playersById }) {
+  // Opened from a stats page? Go back there instead of Home.
+  const [backFrom] = useState(() => (/^#\/stats/.test(prevHash) ? prevHash : null));
   const game = useWatch((cb) => store.watchDoc('games', code, cb), [code]);
   const thumbList = useWatch((cb) => store.watchWhere('thumbs', 'gameId', '==', code, cb), [code]);
   const thumbs = useMemo(() => Object.fromEntries((thumbList || []).map((t) => [t.id, t])), [thumbList]);
@@ -1774,7 +1888,8 @@ function GameScreen({ code, me, playersById }) {
   return html`
     <main class="screen game">
       <nav class="topbar">
-        <a class="back" href="#/">‹ Home</a>
+        ${backFrom ? html`<a class="back" href=${backFrom} onClick=${(e) => { e.preventDefault(); goBack(backFrom); }}>‹ Back</a>`
+          : html`<a class="back" href="#/">‹ Home</a>`}
         <span class="topbar-right">
           ${isPlayer && html`<button class="cam-chip" onClick=${() => pickFacing(facing === 'user' ? 'environment' : 'user')}
             title="Camera opens to (tap to switch)" aria-label=${`Camera opens to ${facing === 'user' ? 'selfie' : 'back'} camera. Tap to switch.`}>
@@ -2469,7 +2584,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
           const who = h.by ? html`<${Emblem} id=${playersById[h.by]?.emblem} size=${16} /> ${name(h.by)} · ` : '';
           const what = found ? `${TIER_STARS[h.item.tier]} +${pts(h.item)}`
             : h.rerolled ? html`${ic('dice')} Rerolled` : h.blocked ? html`${ic('ban')} Blocked` : h.expired ? html`${ic('hourglass')} Swapped out after ${G.ENDLESS_EXPIRE_AFTER} other finds` : 'Skipped';
-          return html`<button class=${'hist-row' + (found ? '' : ' skipped')} key=${h.i} onClick=${() => found && setOpen(h.i)}>
+          return html`<button class=${'hist-row' + (found ? '' : ' skipped')} key=${h.i} onClick=${() => setOpen(h.i)}>
             ${h.photo && thumbs[h.photo] ? html`<img src=${thumbs[h.photo].thumb} alt="" />` : html`<span class=${`hist-icon cat-${h.item.cat}`}>${itemIcon(h.item.icon)}</span>`}
             <span class="grow"><b>${h.item.text}</b><small>${who}${what}</small></span>
           </button>`;
@@ -2484,9 +2599,19 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       onReroll=${canSnap && canReroll(game, game.rerolls?.[me.id]) ? () => reroll(snapSlot) : null} rerolls=${game.rerolls?.[me.id] || 0}
       onBlock=${canSnap ? () => { block(snapSlot); setSnapId(null); } : null}
       onClose=${() => setSnapId(null)} />`}
-    ${viewing && html`<${SquareModal} item=${viewing.item} photoId=${viewing.photo} found=${true}
-      thumb=${viewing.photo && thumbs[viewing.photo]?.thumb} by=${playersById[viewing.by]} at=${viewing.at}
-      canAct=${false} onClose=${() => setOpen(null)} />`}
+    ${viewing && (() => {
+      // Sheet walks the list in display order (newest first): swipe left goes down the list.
+      const k = history.findIndex((h) => h.i === open);
+      const found = G.isFind(viewing);
+      const why = viewing.rerolled ? 'Rerolled' : viewing.blocked ? 'Blocked' : viewing.expired ? `Swapped out after ${G.ENDLESS_EXPIRE_AFTER} other finds` : 'Skipped';
+      return html`<${SquareModal} key=${open} item=${viewing.item} photoId=${viewing.photo} found=${found}
+        thumb=${viewing.photo && thumbs[viewing.photo]?.thumb} by=${found ? playersById[viewing.by] : null} at=${viewing.at}
+        note=${found ? null : `${why}${viewing.by ? ` by ${name(viewing.by)}` : ''}`}
+        position=${`${k + 1} of ${history.length}`}
+        onPrev=${k > 0 ? () => setOpen(history[k - 1].i) : null}
+        onNext=${k < history.length - 1 ? () => setOpen(history[k + 1].i) : null}
+        canAct=${false} onClose=${() => setOpen(null)} />`;
+    })()}
   `;
 }
 
