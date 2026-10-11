@@ -244,7 +244,7 @@ async function createGame(settings, createdBy) {
     ...(settings.tiers?.length && settings.tiers.length < 3 ? { tiers: settings.tiers } : {}),
     ...(settings.backupCount !== undefined && settings.mode !== 'endless' ? { backupCount: settings.backupCount } : {}),
     ...(settings.noSwaps ? { noSwaps: true } : {}), ...(settings.rerollLimit ? { rerollLimit: settings.rerollLimit } : {}),
-    ...(settings.rerollAll ? { rerollAll: true } : {}), createdBy, createdAt: Date.now(), winner: null,
+    ...(settings.rerollAll ? { rerollAll: true } : {}), ...(settings.itemMinutes ? { itemMinutes: settings.itemMinutes } : {}), createdBy, createdAt: Date.now(), winner: null,
   };
   const fail = (e) => toast(`Sync problem: ${e.message}`, 'error');
   if (settings.mode === 'endless') {
@@ -322,7 +322,7 @@ const settingsFrom = (g) => ({
   handSize: g.handSize, mineOnly: !!g.mineOnly,
   mode: g.mode, size: g.size, difficulty: g.difficulty, players: g.players,
   winRule: g.winRule, minutes: g.minutes || 60, freeCenter: g.freeCenter, sameCard: g.sameCard, connect: g.connect, coop: !!g.coop, cats: g.cats, mix: g.cats ? undefined : g.mix, tier: g.lastPick?.tier, tiers: g.tiers,
-  backupCount: g.mode === 'endless' ? undefined : backupCount(g), noSwaps: !!g.noSwaps, rerollLimit: g.rerollLimit, rerollAll: !!g.rerollAll, place: !!g.place,
+  backupCount: g.mode === 'endless' ? undefined : backupCount(g), noSwaps: !!g.noSwaps, rerollLimit: g.rerollLimit, rerollAll: !!g.rerollAll, itemMinutes: g.itemMinutes || 0, place: !!g.place,
   slots: g.mode === 'endless' ? G.endlessState(g).slots : undefined, turnMode: g.mode === 'endless' ? G.endlessState(g).turnMode : undefined,
 });
 
@@ -729,6 +729,7 @@ function NewGame({ mode, me, players }) {
   const [backups, setBackups] = useState(null); // null = follow the board size
   const [rerollLimit, setRerollLimit] = useState(Infinity);
   const [rerollAll, setRerollAll] = useState(false);
+  const [itemMinutes, setItemMinutes] = useState(5);
   const [place, setPlace] = useState(false);
   const [hand, setHand] = useState(HAND_SIZE);
   const toggleTier = (t) => setTiers((ts) => (ts.includes(t) ? (ts.length > 1 ? ts.filter((x) => x !== t) : ts) : ALL_TIERS.filter((x) => x === t || ts.includes(x))));
@@ -741,7 +742,7 @@ function NewGame({ mode, me, players }) {
   const [presetId, setPresetId] = useState('');
   const keepConnect = useRef(false);
   const snapshot = () => ({ size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, cats, mineOnly, tiers, backups,
-    rerollLimit: Number.isFinite(rerollLimit) ? rerollLimit : 'inf', place, hand, tier, slots, turnMode, rerollAll });
+    rerollLimit: Number.isFinite(rerollLimit) ? rerollLimit : 'inf', place, hand, tier, slots, turnMode, rerollAll, itemMinutes });
   const defaults = useRef(null);
   defaults.current ??= snapshot(); // the screen's starting settings, for "None"
   const applyPreset = (id) => {
@@ -754,7 +755,7 @@ function NewGame({ mode, me, players }) {
     set(setFreeCenter, v.freeCenter); set(setSameCard, v.sameCard); set(setConnect, v.connect); set(setCoop, v.coop);
     set(setCats, v.cats); set(setMineOnly, v.mineOnly); set(setTiers, v.tiers); set(setBackups, v.backups);
     set(setRerollLimit, v.rerollLimit === 'inf' ? Infinity : v.rerollLimit); set(setPlace, v.place); set(setHand, v.hand);
-    set(setTier, v.tier); set(setSlots, v.slots); set(setTurnMode, v.turnMode); set(setRerollAll, v.rerollAll ?? false);
+    set(setTier, v.tier); set(setSlots, v.slots); set(setTurnMode, v.turnMode); set(setRerollAll, v.rerollAll ?? false); set(setItemMinutes, v.itemMinutes ?? 5);
   };
   const savePreset = () => {
     const current = modePresets.find((x) => x.id === presetId);
@@ -788,7 +789,7 @@ function NewGame({ mode, me, players }) {
     setBusy(true);
     try {
       const code = await createGame({ mode, size, difficulty: hideStars ? 'balanced' : difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, cats, mineOnly,
-        tier: hideStars ? 'any' : tier, slots, turnMode, rerollAll: isEndless && rerollAll, tiers: isEndless || hideStars ? null : tiers,
+        tier: hideStars ? 'any' : tier, slots, turnMode, rerollAll: isEndless && rerollAll, itemMinutes: isEndless ? itemMinutes : 0, tiers: isEndless || hideStars ? null : tiers,
         backupCount: nb, noSwaps: rerollLimit === 0, rerollLimit: Number.isFinite(rerollLimit) && rerollLimit > 0 ? rerollLimit : null, place: !isBingo && !isEndless && place, handSize: hand, players: selected }, me.id);
       go(`/g/${code}`);
     } catch (e) {
@@ -819,6 +820,9 @@ function NewGame({ mode, me, players }) {
         <h2>Who can snap?</h2>
         <${Choice} value=${turnMode} onChange=${setTurnMode}
           options=${[['any', 'Anyone', 'First to snap an item gets the points'], ['turns', 'Take turns', 'Players go one at a time']]} />
+        <h2>Change items after</h2>
+        <${Choice} value=${itemMinutes} onChange=${setItemMinutes} options=${[[0, 'Off'], [3, '3 min'], [5, '5 min'], [10, '10 min'], [15, '15 min']]} />
+        <p class="muted small">${itemMinutes ? `An item nobody finds within ${itemMinutes} minutes is swapped for a new one. You can pause the game.` : 'Items stay until they are found, rerolled or pushed out by other finds.'}</p>
         ${!hideStars && html`<h2>Starting difficulty</h2>
         <${Choice} grid value=${tier} onChange=${setTier} options=${endlessTiers()} />
         <p class="muted small">Whoever snaps an item picks the difficulty and type of the one that replaces it.</p>`}
@@ -2733,7 +2737,17 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
   const scores = G.endlessScores(game);
   const over = !!game.winner;
   const turns = st.turnMode === 'turns';
-  const canSnap = isPlayer && !over && (!turns || st.turn === me.id);
+  // Timed swaps: each item is swapped out after game.itemMinutes (paused time doesn't count).
+  const paused = !!game.pausedAt;
+  const limitMs = (game.itemMinutes || 0) * 60000;
+  const [nowT, setNowT] = useState(Date.now());
+  useEffect(() => {
+    if (!limitMs || paused || over) return;
+    const t = setInterval(() => setNowT(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [limitMs, paused, over]);
+  const leftMs = (slot) => (limitMs && slot.item ? limitMs - ((game.pausedAt || nowT) - (slot.at || nowT)) : null);
+  const canSnap = isPlayer && !over && !paused && (!turns || st.turn === me.id);
   const name = (pid) => (pid === me.id ? 'You' : firstName(playersById[pid]));
   const [histF, setHistF] = useState([]); // filter for "Everything so far"
   const histKind = (h) => (G.isFind(h) ? (h.photo ? 'photo' : 'found') : h.rerolled ? 'rerolled' : h.expired ? 'expired' : h.blocked ? 'blocked' : 'skipped');
@@ -2799,11 +2813,46 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       g.history = [...(g.history || []), { item: a.item, by: me.id, [why]: true, at: Date.now() }];
       a.item = it;
       a.seen = 0;
+      a.at = Date.now();
       if (why === 'rerolled') g.rerolls = { ...g.rerolls, [me.id]: (g.rerolls?.[me.id] || 0) + 1 };
     }).catch((e) => { toast(`Swapping needs a connection: ${e.message}`, 'error'); return null; });
     if (res && !res.ok) toast(turns && st.turn !== me.id ? "It's not your turn." : 'That item just changed. Try again.', 'error');
   };
   const reroll = (slot) => swapSlot(slot, null, 'rerolled');
+
+  // Swap out items whose time ran out. Every open copy of the game may try; the transaction lets only one win.
+  const expiring = useRef(new Set());
+  useEffect(() => {
+    if (!limitMs || paused || over || !isPlayer) return;
+    for (const slot of st.active) {
+      if (!slot.item || leftMs(slot) > 0 || expiring.current.has(slot.id + slot.item.text)) continue;
+      const tag = slot.id + slot.item.text;
+      expiring.current.add(tag);
+      update((s2, g) => {
+        const a = slotOf(s2, slot.id);
+        if (g.pausedAt || !a?.item || a.item.text !== slot.item.text || Date.now() - (a.at || 0) < limitMs) return false;
+        const used = usedTexts(g, s2);
+        const it = G.drawEndless(poolFor({ cats: a.cats, mix: a.mix, mineOnly: g.mineOnly }).filter((x) => x.text !== a.item.text), { tier: a.tier || 'any', exclude: used });
+        if (!it) return false;
+        g.history = [...(g.history || []), { item: a.item, expired: true, timed: true, at: Date.now() }];
+        Object.assign(a, { item: it, seen: 0, at: Date.now() });
+      }).catch(() => {}).finally(() => setTimeout(() => expiring.current.delete(tag), 5000));
+    }
+  });
+
+  const togglePause = () => store.transact('games', game.code, (g) => {
+    if (!g || g.winner) return undefined;
+    if (g.pausedAt) {
+      // Resume: push every item's start time forward by the pause, so its countdown picks up where it stopped.
+      const gap = Date.now() - g.pausedAt;
+      const s2 = G.endlessState(g);
+      s2.active = s2.active.map((a) => (a.item ? { ...a, at: (a.at || g.pausedAt) + gap } : a));
+      const out = G.withEndlessState(g, s2);
+      delete out.pausedAt;
+      return out;
+    }
+    return { ...g, pausedAt: Date.now() };
+  }).catch((e) => toast(`Pausing needs a connection: ${e.message}`, 'error'));
   const block = (slot) => { blockItem(slot.item.text); swapSlot(slot, null, 'blocked'); };
   // Whole-board reroll: every item that's up gets a fresh one (same stars and kinds). Counts as one reroll.
   const rerollAll = async () => {
@@ -2819,6 +2868,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         g.history = [...(g.history || []), { item: a.item, by: me.id, rerolled: true, at: now }];
         a.item = it;
         a.seen = 0;
+        a.at = now;
         changed++;
       }
       if (!changed) return false;
@@ -2851,7 +2901,13 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
   return html`
     ${celebrate && html`<${Confetti} />`}
-    <div class="game-info"><span>Endless · ${findCount(game)} find${findCount(game) === 1 ? '' : 's'} · ${st.slots} active · ${turns ? 'Taking turns' : 'Anyone snaps'}${mixTag(game)}</span><${RerollPill} game=${game} n=${game.rerolls?.[me.id] || 0} show=${isPlayer} /></div>
+    <div class="game-info"><span>Endless · ${findCount(game)} find${findCount(game) === 1 ? '' : 's'} · ${st.slots} active · ${turns ? 'Taking turns' : 'Anyone snaps'}${limitMs ? ` · ${game.itemMinutes} min each` : ''}${mixTag(game)}</span>
+      <span class="info-right">
+        ${isPlayer && !over && html`<button class=${'pause-btn' + (paused ? ' on' : '')} onClick=${togglePause} aria-label=${paused ? 'Resume' : 'Pause'}>
+          ${paused ? html`${ic('play')} Resume` : html`${ic('pause')} Pause`}</button>`}
+        <${RerollPill} game=${game} n=${game.rerolls?.[me.id] || 0} show=${isPlayer} />
+      </span></div>
+    ${paused && !over && html`<div class="banner paused-banner"><span>${ic('pause')} <b>Paused.</b> Timers are stopped and nobody can snap until someone taps Resume.</span></div>`}
     ${over && html`<${WinBanner}
       text=${game.winner === 'draw' ? "IT'S A TIE!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
       sub="Most points when the game ended." onRematch=${onRematch} />`}
@@ -2869,7 +2925,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     </div>
 
     ${!over && html`
-      <p class="turn-line">${!turns ? (isPlayer ? html`${ic('zap')} Anyone can snap. First one gets it!` : 'Anyone in the game can snap.')
+      <p class="turn-line">${paused ? html`${ic('pause')} Game paused` : !turns ? (isPlayer ? html`${ic('zap')} Anyone can snap. First one gets it!` : 'Anyone in the game can snap.')
         : st.turn === me.id ? html`${ic('target')} Your turn!` : html`<${Emblem} id=${playersById[st.turn]?.emblem} size=${22} /> ${name(st.turn)}'s turn`}</p>
       <div class=${'endless-slots' + (single ? ' single' : '')}>
         ${st.active.map((slot) => slot.pick
@@ -2881,6 +2937,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
               <h2>${slot.item.text}</h2>
               <small>${catLabel(slot.item.cat)} · ${pts(slot.item)} pt${pts(slot.item) === 1 ? '' : 's'}</small>
               ${st.slots > 1 && html`<${LifeBars} left=${G.ENDLESS_EXPIRE_AFTER - (slot.seen || 0)} />`}
+              ${limitMs > 0 && html`<${ItemTimer} left=${leftMs(slot)} total=${limitMs} paused=${paused} />`}
             </button>
             ${canSnap && (single ? html`<div class="endless-actions">
               <${PhotoButtons} label="Snap it" onFile=${(f) => capture(slot, f).catch((e) => toast(e.message, 'error'))} />
@@ -2911,7 +2968,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
           const found = G.isFind(h);
           const who = h.by ? html`<${Emblem} id=${playersById[h.by]?.emblem} size=${16} /> ${name(h.by)} · ` : '';
           const what = found ? `${TIER_STARS[h.item.tier]} +${pts(h.item)}`
-            : h.rerolled ? html`${ic('dice')} Rerolled` : h.blocked ? html`${ic('ban')} Blocked` : h.expired ? html`${ic('hourglass')} Swapped out after ${G.ENDLESS_EXPIRE_AFTER} other finds` : 'Skipped';
+            : h.rerolled ? html`${ic('dice')} Rerolled` : h.blocked ? html`${ic('ban')} Blocked` : h.expired ? html`${ic('hourglass')} ${h.timed ? 'Time ran out' : `Swapped out after ${G.ENDLESS_EXPIRE_AFTER} other finds`}` : 'Skipped';
           return html`<button class=${'hist-row' + (found ? '' : ' skipped')} key=${h.i} onClick=${() => setOpen(h.i)}>
             ${h.photo && thumbs[h.photo] ? html`<img src=${thumbs[h.photo].thumb} alt="" />` : html`<span class=${`hist-icon cat-${h.item.cat}`}>${itemIcon(h.item.icon)}</span>`}
             <span class="grow"><b>${h.item.text}</b><small>${who}${what}</small></span>
@@ -2933,7 +2990,7 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       // Sheet walks the list in display order (newest first): swipe left goes down the list.
       const k = history.findIndex((h) => h.i === open);
       const found = G.isFind(viewing);
-      const why = viewing.rerolled ? 'Rerolled' : viewing.blocked ? 'Blocked' : viewing.expired ? `Swapped out after ${G.ENDLESS_EXPIRE_AFTER} other finds` : 'Skipped';
+      const why = viewing.rerolled ? 'Rerolled' : viewing.blocked ? 'Blocked' : viewing.expired ? (viewing.timed ? 'Time ran out' : `Swapped out after ${G.ENDLESS_EXPIRE_AFTER} other finds`) : 'Skipped';
       return html`<${SquareModal} item=${viewing.item} photoId=${viewing.photo} found=${found}
         thumb=${viewing.photo && thumbs[viewing.photo]?.thumb} by=${found ? playersById[viewing.by] : null} at=${viewing.at}
         note=${found ? null : `${why}${viewing.by ? ` by ${name(viewing.by)}` : ''}`}
@@ -2944,6 +3001,14 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
         canAct=${false} onClose=${() => setOpen(null)} />`;
     })()}
   `;
+}
+
+/** Countdown on an Endless card until the item is swapped for a new one. */
+function ItemTimer({ left, total, paused }) {
+  const ms = Math.max(0, left);
+  const m = Math.floor(ms / 60000), sec = Math.floor((ms % 60000) / 1000);
+  return html`<span class=${'item-timer' + (ms < 60000 ? ' low' : '') + (paused ? ' paused' : '')} title="Time until this item changes"
+    style=${`--p:${Math.max(0, Math.min(1, ms / total))}`}>${ic(paused ? 'pause' : 'clock')} ${m}:${String(sec).padStart(2, '0')}</span>`;
 }
 
 /** Little bars on an Endless card: how many more finds of other items before this one is swapped out. */
