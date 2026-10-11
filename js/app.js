@@ -434,11 +434,6 @@ function Home({ me, playersById }) {
         </div>
         ${games === undefined && html`<p class="muted">Loading…</p>`}
         ${games && !sorted.length && html`<p class="muted">No games yet. Start one above!</p>`}
-        ${sorted.length > 1 && html`<div class="filter-row status-filter">
-          ${[['all', 'All games'], ['live', 'In progress'], ['done', 'Done']].map(([k, l]) => html`
-            <button class="pill ${status === k ? 'sel' : ''}" onClick=${() => setStatus(k)}>${l}
-              <small>${k === 'all' ? sorted.length : sorted.filter((g) => (k === 'done') === isDone(g)).length}</small></button>`)}
-        </div>`}
         ${sorted.length > 1 && html`<div class="row game-filters">
           <select class="text small-select" value=${day} onChange=${(e) => setDay(e.target.value)} aria-label="Filter by date">
             <option value="all">All dates</option>
@@ -449,9 +444,14 @@ function Home({ me, playersById }) {
             ${people.map((pid) => html`<option value=${pid}>${pid === me.id ? 'Me' : playersById[pid].name}</option>`)}
           </select>
         </div>`}
+        ${sorted.length > 1 && html`<div class="filter-row status-filter">
+          ${[['all', 'All games'], ['live', 'In progress'], ['done', 'Done']].map(([k, l]) => html`
+            <button class="pill ${status === k ? 'sel' : ''}" onClick=${() => setStatus(k)}>${l}
+              <small>${k === 'all' ? sorted.length : sorted.filter((g) => (k === 'done') === isDone(g)).length}</small></button>`)}
+        </div>`}
         <div class="game-list">
           ${shown.map((g) => html`<${GameRow} key=${g.code} g=${g} playersById=${playersById} href=${`#/g/${g.code}`}
-            onDelete=${() => confirmDelete(g.code)} />`)}
+            onDelete=${() => confirmDelete(g.code)} onEnd=${() => endGameEarly(g)} />`)}
         </div>
         ${sorted.length > 0 && !shown.length && html`<p class="muted center">No games match.</p>`}
       </section>
@@ -738,7 +738,7 @@ const gameResult = (g, playersById) => {
 };
 
 /** One game in a list. Pass href to make it a link, onClick/selected for picking, onDelete for a trash button. */
-function GameRow({ g, playersById, href, onClick, selected, onDelete }) {
+function GameRow({ g, playersById, href, onClick, selected, onDelete, onEnd }) {
   const body = html`
     ${selected !== undefined && html`<span class="check-box">${selected ? '✓' : ''}</span>`}
     <span class="grow">
@@ -748,10 +748,75 @@ function GameRow({ g, playersById, href, onClick, selected, onDelete }) {
       <small>${new Date(g.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · ${gameResult(g, playersById)}</small>
     </span>
     <span class="stack">${g.players.slice(0, 4).map((pid) => html`<${Emblem} id=${playersById[pid]?.emblem} size=${28} />`)}</span>`;
-  return html`<div class=${`game-card mode-${g.mode}${g.coop ? ' coop' : ''}${selected ? ' sel' : ''}${isDone(g) ? ' done' : ''}`}>
+  const canEnd = !!onEnd && !isDone(g);
+  const swipe = useSwipeReveal(!!onDelete, canEnd);
+  const card = html`<div class=${`game-card mode-${g.mode}${g.coop ? ' coop' : ''}${selected ? ' sel' : ''}${isDone(g) ? ' done' : ''}`}
+      ref=${swipe.ref} onClickCapture=${swipe.guard}>
     ${href ? html`<a class="game-main" href=${href}>${body}</a>` : html`<button class="game-main" onClick=${onClick}>${body}</button>`}
     ${onDelete && html`<button class="icon-btn" aria-label=${`Delete game ${g.code}`} onClick=${onDelete}>${TRASH_SVG}</button>`}
   </div>`;
+  if (!onDelete) return card;
+  return html`<div class="swipe-row">
+    ${canEnd && html`<button class="swipe-end" tabindex="-1" onClick=${async () => { swipe.close(); await onEnd(); }}>🏁<span>End game</span></button>`}
+    <button class="swipe-delete" tabindex="-1" onClick=${async () => { swipe.close(); await onDelete(); }}>${TRASH_SVG}<span>Delete</span></button>
+    ${card}
+  </div>`;
+}
+
+const SWIPE_OPEN = 96; // px the row slides to show the button behind it
+/** Swipe a row left to reveal Delete (or right to reveal End game). A tap while open (or right after a drag) just closes it.
+ *  state.open: 0 closed, -1 slid left, 1 slid right. */
+function useSwipeReveal(enabled, canRight) {
+  const ref = useRef(null);
+  const state = useRef({ open: 0, dragged: false });
+  const right = useRef(canRight);
+  right.current = canRight;
+  const set = (x, animate) => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.transition = animate ? 'transform 0.2s ease-out' : 'none';
+    el.style.transform = x ? `translateX(${x}px)` : '';
+  };
+  const close = () => { state.current.open = 0; set(0, true); };
+  useEffect(() => {
+    const el = ref.current;
+    if (!enabled || !el) return;
+    let x0 = 0, y0 = 0, dx = 0, mode = null; // mode: null until we know, 'h' swiping, 'v' scrolling
+    const start = (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = null; state.current.dragged = false; };
+    const move = (e) => {
+      const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+      if (!mode) { if (Math.abs(mx) < 10 && Math.abs(my) < 10) return; mode = Math.abs(mx) > Math.abs(my) ? 'h' : 'v'; }
+      if (mode !== 'h') return;
+      e.preventDefault();
+      state.current.dragged = true;
+      const max = right.current ? SWIPE_OPEN * 1.4 : 0;
+      dx = Math.min(max, Math.max(-SWIPE_OPEN * 1.4, mx + state.current.open * SWIPE_OPEN));
+      set(dx, false);
+    };
+    const end = () => {
+      if (mode !== 'h') return;
+      state.current.open = dx < -SWIPE_OPEN / 2 ? -1 : dx > SWIPE_OPEN / 2 && right.current ? 1 : 0;
+      set(state.current.open * SWIPE_OPEN, true);
+    };
+    el.addEventListener('touchstart', start, { passive: true });
+    el.addEventListener('touchmove', move, { passive: false });
+    el.addEventListener('touchend', end);
+    el.addEventListener('touchcancel', end);
+    return () => {
+      el.removeEventListener('touchstart', start);
+      el.removeEventListener('touchmove', move);
+      el.removeEventListener('touchend', end);
+      el.removeEventListener('touchcancel', end);
+    };
+  }, [enabled]);
+  const guard = (e) => {
+    if (state.current.dragged || state.current.open) {
+      e.preventDefault(); e.stopPropagation();
+      state.current.dragged = false;
+      close();
+    }
+  };
+  return { ref, guard, close };
 }
 
 // ───────────────────────── mega collage ─────────────────────────

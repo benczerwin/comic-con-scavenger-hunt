@@ -582,7 +582,14 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s3); }
 .panel .panel-head h2 { margin: 0; }
 .game-filters { margin-bottom: var(--s3); }
-.status-filter { margin-bottom: var(--s2); }
+.status-filter { margin-bottom: var(--s3); }
+.swipe-row { position: relative; border-radius: 12px; overflow: hidden; }
+.swipe-row .game-card { position: relative; z-index: 1; touch-action: pan-y; }
+.swipe-end { position: absolute; inset: 0 auto 0 0; width: 120px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; padding-right: 24px; background: var(--ink); color: #fff; border: 3px solid var(--ink); border-radius: 12px; font-weight: 900; font-size: 0.8rem; }
+.swipe-end span, .swipe-delete span { white-space: nowrap; }
+.swipe-delete { position: absolute; inset: 0 0 0 auto; width: 120px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; padding-left: 24px; background: var(--red); color: #fff; border: 3px solid var(--ink); border-radius: 12px; font-weight: 900; font-size: 0.8rem; }
 .status-filter .pill small { margin-left: 4px; font-weight: 700; opacity: 0.6; }
 .status-tag { font-weight: 900; font-size: 0.7rem; letter-spacing: 0.5px; text-transform: uppercase; padding: 2px 8px;
   border-radius: 999px; border: 2px solid var(--ink); line-height: 1.2; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
