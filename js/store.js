@@ -26,13 +26,22 @@ let pending = 0;
 const pendingListeners = new Set();
 const emitPending = () => pendingListeners.forEach((cb) => cb(pending));
 export const onPending = (cb) => { pendingListeners.add(cb); return () => pendingListeners.delete(cb); };
+// A save that times out usually means the connection is wedged (a reload always clears it), so tell the UI.
+const stuckListeners = new Set();
+export const onStuck = (cb) => { stuckListeners.add(cb); return () => stuckListeners.delete(cb); };
 export async function transact(col, id, fn) {
   pending++; emitPending();
   let timer;
   try {
     return await Promise.race([
       backend.transact(col, id, fn),
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('The connection is slow. Try again in a moment.')), 15000); }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          backend.resetNetwork?.();
+          stuckListeners.forEach((cb) => cb());
+          reject(new Error('The connection is slow. Try again in a moment.'));
+        }, 12000);
+      }),
     ]);
   } finally {
     clearTimeout(timer);

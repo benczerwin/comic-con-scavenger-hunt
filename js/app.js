@@ -69,6 +69,18 @@ function SyncIndicator() {
   return show ? html`<div class="sync-pill"><span class="spinner tiny"></span>Saving…</div>` : null;
 }
 
+/** After a save times out: one tap reloads the page, which always clears a stuck connection. */
+function StuckBanner() {
+  const [show, setShow] = useState(false);
+  useEffect(() => store.onStuck(() => setShow(true)), []);
+  if (!show) return null;
+  return html`<div class="stuck-banner" role="alert">
+    <span>Connection got stuck. Reloading fixes it.</span>
+    <button class="btn small primary" onClick=${() => location.reload()}>Reload</button>
+    <button class="x" aria-label="Dismiss" onClick=${() => setShow(false)}>×</button>
+  </div>`;
+}
+
 function Toasts() {
   const [items, setItems] = useState([]);
   pushToast = (t) => {
@@ -2445,7 +2457,7 @@ function App() {
   else if (route[0] === 'g' && route[1]) body = html`<${GameScreen} code=${route[1].toUpperCase()} me=${me} playersById=${playersById} key=${route[1]} />`;
   else body = html`<${Home} me=${me} playersById=${playersById} />`;
 
-  return html`${body}<${SyncIndicator} /><${Toasts} />`;
+  return html`${body}<${SyncIndicator} /><${StuckBanner} /><${Toasts} />`;
 }
 
 render(html`<${App} />`, document.getElementById('app'));

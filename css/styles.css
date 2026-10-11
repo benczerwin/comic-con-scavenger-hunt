@@ -671,6 +671,13 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
   display: flex; align-items: center; gap: var(--s2); padding: 6px 14px; border: 2px solid var(--ink); border-radius: 999px;
   background: #fff; font-weight: 800; font-size: 0.85rem; box-shadow: 2px 2px 0 var(--ink); pointer-events: none;
 }
+.stuck-banner {
+  position: fixed; left: var(--s3); right: var(--s3); top: calc(var(--s3) + env(safe-area-inset-top)); z-index: 130;
+  max-width: 540px; margin: 0 auto; display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s2) var(--s2) var(--s3);
+  background: #fff3bf; border: 3px solid var(--ink); border-radius: 12px; box-shadow: 3px 3px 0 var(--ink); font-weight: 800; font-size: 0.9rem;
+}
+.stuck-banner span { flex: 1; }
+.stuck-banner .x { background: none; border: 0; font-size: 1.6rem; line-height: 1; padding: 0 6px; }
 .spinner.tiny { width: 16px; height: 16px; border-width: 3px; }
 /* Every tappable thing gets a visible press, so a tap never feels ignored. */
 .choice button:active, .cat-opt:active, .pill:active, .chip:active, .score:active, .emblem-opt:active,

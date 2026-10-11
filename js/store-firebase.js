@@ -1,6 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
-  initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache, disableNetwork, enableNetwork,
   doc, collection, query, where, onSnapshot, getDoc, getDocFromCache, getDocs, setDoc, updateDoc, deleteDoc,
   runTransaction, deleteField,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -9,10 +9,25 @@ import { firebaseConfig } from './firebase-config.js';
 export const isLive = true;
 
 const app = initializeApp(firebaseConfig);
-// Offline cache: the board still works on spotty convention Wi-Fi; writes sync when back online.
+// iOS Safari can lose its IndexedDB connection while the tab sits in the background. Firestore's on-disk cache
+// then wedges, and every save after that hangs until the page is reloaded. So on iPhone/iPad keep the cache in
+// memory (saves still queue while offline); elsewhere keep the on-disk cache for spotty con Wi-Fi.
+const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+  localCache: isIOS ? memoryLocalCache() : persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 });
+
+// Phones drop the live connection while the screen is off or the app is in the background, and Firestore can be
+// slow to notice. Kick it when we come back, and whenever the browser says the network is back.
+export async function resetNetwork() {
+  try { await disableNetwork(db); await enableNetwork(db); } catch (e) { logErr('reset network')(e); }
+}
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) hiddenAt = Date.now();
+  else if (hiddenAt && Date.now() - hiddenAt > 15000) resetNetwork();
+});
+addEventListener('online', resetNetwork);
 
 const withId = (snap) => (snap.exists() ? { id: snap.id, ...snap.data() } : null);
 const logErr = (where) => (e) => console.error(`[firestore] ${where}`, e);
