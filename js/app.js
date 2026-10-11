@@ -567,7 +567,7 @@ function SingleSelect({ options, value, onChange, placeholder, label }) {
   const cur = options.find((o) => o.value === value);
   return html`<div class="multi-select" ref=${ref}>
     <button type="button" class="text small-select multi-btn" aria-expanded=${open} aria-label=${label} onClick=${() => setOpen(!open)}>
-      ${cur ? cur.label : placeholder}</button>
+      ${cur?.value ? cur.label : placeholder}</button>
     ${open && html`<div class="multi-pop" role="listbox">
       ${options.map((o) => html`<button type="button" role="option" aria-selected=${o.value === value} key=${o.value}
         class=${'multi-opt single' + (o.value === value ? ' sel' : '')} onClick=${() => { setOpen(false); onChange(o.value); }}>
@@ -714,11 +714,12 @@ function NewGame({ mode, me, players }) {
   const keepConnect = useRef(false);
   const snapshot = () => ({ size, difficulty, winRule, minutes, freeCenter, sameCard, connect, coop, cats, mineOnly, tiers, backups,
     rerollLimit: Number.isFinite(rerollLimit) ? rerollLimit : 'inf', place, hand, tier, slots, turnMode });
+  const defaults = useRef(null);
+  defaults.current ??= snapshot(); // the screen's starting settings, for "None"
   const applyPreset = (id) => {
     setPresetId(id);
-    const p = modePresets.find((x) => x.id === id);
-    if (!p) return;
-    const v = p.s;
+    const v = id ? modePresets.find((x) => x.id === id)?.s : defaults.current;
+    if (!v) return;
     keepConnect.current = v.size !== size; // the size change below must not reset "in a row"
     const set = (fn, val) => val !== undefined && fn(val);
     set(setSize, v.size); set(setDifficulty, v.difficulty); set(setWinRule, v.winRule); set(setMinutes, v.minutes);
@@ -777,7 +778,7 @@ function NewGame({ mode, me, players }) {
       <h1 class="title">${isBingo ? 'New Solo Series' : isEndless ? 'New Endless Hunt' : 'New Crossover'}</h1>
       ${modePresets.length > 0 && html`<div class="row game-filters preset-row">
         <${SingleSelect} label="Presets" placeholder="Choose a preset…" value=${presetId} onChange=${applyPreset}
-          options=${modePresets.map((p) => ({ value: p.id, label: p.name }))} />
+          options=${[{ value: '', label: 'None (default settings)' }, ...modePresets.map((p) => ({ value: p.id, label: p.name }))]} />
         ${presetId && html`<button class="preset-del" aria-label="Delete preset" onClick=${deletePreset}>${ic('trash')}</button>`}
       </div>`}
 
