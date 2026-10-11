@@ -530,10 +530,13 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .endless-card.compact h2 { font-size: 1.35rem; margin: 0; }
 .endless-card.compact .stars { top: 6px; right: 10px; font-size: 0.9rem; }
 .slot-actions { margin-top: var(--s3); }
-.endless-slots:has(.quick) { gap: var(--s3); }
-.endless-slot.quick { display: flex; align-items: center; gap: var(--s3); }
+.endless-slots:has(.quick) { gap: var(--s4); }
+/* Every item card in the set matches the tallest one (unless a "pick the next item" panel is mixed in). */
+.endless-slots:has(.quick):not(:has(.pick-panel)) { display: grid; grid-auto-rows: 1fr; }
+.endless-slot.quick { display: flex; align-items: stretch; gap: var(--s3); }
+.endless-slot.quick .quick-btns { align-self: center; }
 .endless-slot.quick .endless-card { flex: 1; min-width: 0; }
-.endless-slot.quick .endless-card.compact { padding: var(--s3) 26px var(--s3) var(--s3); column-gap: 10px; }
+.endless-slot.quick .endless-card.compact { padding: var(--s3) 40px var(--s3) var(--s3); column-gap: 10px; align-content: center; }
 .endless-slot.quick .endless-card.compact .icon { font-size: 2rem; }
 .endless-slot.quick .endless-card.compact h2 { font-size: 1.1rem; }
 .quick-btns { flex: none; display: flex; gap: var(--s2); }
