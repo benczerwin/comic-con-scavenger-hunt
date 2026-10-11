@@ -558,6 +558,7 @@ button.badge { border: 0; font: inherit; font-weight: 800; font-size: 0.65rem; l
 .life { position: absolute; left: 50%; bottom: 7px; transform: translateX(-50%); display: flex; gap: 4px; }
 .life i { width: 14px; height: 4px; border-radius: 2px; background: rgba(0,0,0,0.15); }
 .life i.on { background: var(--ink); }
+.reroll-all { display: flex; align-items: center; gap: 6px; margin: calc(-1 * var(--s3)) auto var(--s5); }
 .pick-panel { margin: 0; }
 .pick-panel h2 { margin-bottom: var(--s1); }
 .endless-history { display: flex; flex-direction: column; gap: var(--s2); }
