@@ -575,8 +575,8 @@ function CatPicker({ value, onChange }) {
   </div>`;
 }
 
-function Choice({ options, value, onChange }) {
-  return html`<div class="choice">
+function Choice({ options, value, onChange, grid }) {
+  return html`<div class=${'choice' + (grid ? ' grid2' : '')}>
     ${options.map(([v, label, sub]) => html`
       <button class=${value === v ? 'sel' : ''} onClick=${() => onChange(v)}>
         <b>${label}</b>${sub && html`<small>${sub}</small>`}
@@ -647,7 +647,7 @@ function NewGame({ mode, me, players }) {
         <${Choice} value=${turnMode} onChange=${setTurnMode}
           options=${[['any', 'Anyone', 'First to snap an item gets the points'], ['turns', 'Take turns', 'Players go one at a time']]} />
         ${!hideStars && html`<h2>Starting difficulty</h2>
-        <${Choice} value=${tier} onChange=${setTier} options=${endlessTiers()} />
+        <${Choice} grid value=${tier} onChange=${setTier} options=${endlessTiers()} />
         <p class="muted small">Whoever snaps an item picks the difficulty and type of the one that replaces it.</p>`}
         <${RerollChoice} limit=${rerollLimit} setLimit=${setRerollLimit} />
       </section>` : html`<section class="panel">
@@ -668,7 +668,7 @@ function NewGame({ mode, me, players }) {
 
         ${!hideStars && tiers.length > 1 && html`
           <h2>Difficulty</h2>
-          <${Choice} value=${difficulty} onChange=${setDifficulty}
+          <${Choice} grid value=${difficulty} onChange=${setDifficulty}
             options=${Object.entries(G.DIFFICULTY).map(([k, d]) => [k, d.label, d.blurb])} />`}
 
         ${isBingo ? html`
@@ -2453,7 +2453,7 @@ function PickSlot({ slot, game, me, isPlayer, name, onDeal }) {
     ${isPlayer ? html`
       ${!mine && html`<p class="muted small">Anyone can pick if they're busy.</p>`}
       ${!hideStars && html`<h3>Difficulty</h3>
-      <${Choice} value=${tier} onChange=${setTier} options=${endlessTiers()} />`}
+      <${Choice} grid value=${tier} onChange=${setTier} options=${endlessTiers()} />`}
       <h3>Categories</h3>
       <${CatPicker} value=${cats} onChange=${setCats} />
       <button class="btn primary huge" disabled=${!cats.length} onClick=${() => onDeal(slot, hideStars ? 'any' : tier, someCats(cats) || null)}>
