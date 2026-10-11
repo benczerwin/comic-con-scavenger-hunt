@@ -474,7 +474,7 @@ function Home({ me, playersById }) {
         ${games && !sorted.length && html`<p class="muted">No games yet. Start one above!</p>`}
         ${sorted.length > 1 && html`<div class="row game-filters">
           <${DateMulti} days=${days} value=${pickedDays} onChange=${setDays} />
-          <select class="text small-select" value=${who} onChange=${(e) => setWho(e.target.value)} aria-label="Filter by player">
+          <select class=${'text small-select' + (who !== 'all' ? ' active' : '')} value=${who} onChange=${(e) => setWho(e.target.value)} aria-label="Filter by player">
             <option value="all">Everyone</option>
             ${people.map((pid) => html`<option value=${pid}>${pid === me.id ? 'Me' : playersById[pid].name}</option>`)}
           </select>
@@ -533,12 +533,26 @@ function DateMulti({ days, value, onChange }) {
     return () => document.removeEventListener('pointerdown', away);
   }, [open]);
   const toggle = (d) => onChange(picked.includes(d) ? picked.filter((x) => x !== d) : days.filter((x) => x === d || picked.includes(x)));
-  const label = !picked.length ? 'All dates' : picked.length === 1 ? dayLabel(picked[0]) : `${picked.length} dates`;
+  // Group days by year (con year) so a whole year can be picked at once.
+  const years = [...new Set(days.map((d) => new Date(d).getFullYear()))];
+  const daysOf = (y) => days.filter((d) => new Date(d).getFullYear() === y);
+  const yearOn = (y) => daysOf(y).every((d) => picked.includes(d));
+  const toggleYear = (y) => {
+    const ds = daysOf(y);
+    onChange(yearOn(y) ? picked.filter((d) => !ds.includes(d)) : days.filter((d) => ds.includes(d) || picked.includes(d)));
+  };
+  const fullYears = years.filter(yearOn);
+  const label = !picked.length ? 'All dates'
+    : fullYears.length && fullYears.reduce((n, y) => n + daysOf(y).length, 0) === picked.length ? fullYears.map((y) => `All of ${y}`).join(' + ')
+    : picked.length === 1 ? dayLabel(picked[0]) : `${picked.length} dates`;
   return html`<div class="multi-select" ref=${ref}>
-    <button type="button" class="text small-select multi-btn" aria-expanded=${open} onClick=${() => setOpen(!open)}>${label}</button>
+    <button type="button" class=${'text small-select multi-btn' + (picked.length ? ' active' : '')} aria-expanded=${open} onClick=${() => setOpen(!open)}>${label}</button>
     ${open && html`<div class="multi-pop" role="listbox" aria-multiselectable="true">
       <label class="multi-opt"><input type="checkbox" checked=${!picked.length} onChange=${() => onChange([])} /> All dates</label>
-      ${days.map((d) => html`<label class="multi-opt" key=${d}><input type="checkbox" checked=${picked.includes(d)} onChange=${() => toggle(d)} /> ${dayLabel(d)}</label>`)}
+      ${years.map((y) => html`<div class="multi-year" key=${y}>
+        <label class="multi-opt year"><input type="checkbox" checked=${yearOn(y)} onChange=${() => toggleYear(y)} /> All of ${y}</label>
+        ${daysOf(y).map((d) => html`<label class="multi-opt day" key=${d}><input type="checkbox" checked=${picked.includes(d)} onChange=${() => toggle(d)} /> ${dayLabel(d)}</label>`)}
+      </div>`)}
     </div>`}
   </div>`;
 }
@@ -982,8 +996,9 @@ function StatsScreen({ me, players, playersById, focus }) {
   const filtered = fGames.length !== games.length;
 
   const stats = G.playerStats(fGames, fBoards);
-  const catStats = G.categoryStats(fGames, fBoards);
-  const ranked = (players || []).filter((p) => stats[p.id])
+  // Picking a player shows only that player: their card, their finds per category, their records.
+  const catStats = G.categoryStats(fGames, fBoards, who === 'all' ? null : who);
+  const ranked = (players || []).filter((p) => stats[p.id] && (who === 'all' || p.id === who))
     .sort((a, b) => stats[b.id].wins - stats[a.id].wins || stats[b.id].found - stats[a.id].found);
 
   if (focus && playersById[focus]) return html`<${PlayerStats} p=${playersById[focus]} s=${stats[focus]} me=${me} playersById=${playersById}
@@ -1007,7 +1022,7 @@ function StatsScreen({ me, players, playersById, focus }) {
       <h1 class="title">Player stats</h1>
       ${games.length > 1 && html`<div class="row game-filters stats-filters">
         <${DateMulti} days=${days} value=${pickedDays} onChange=${setDays} />
-        <select class="text small-select" value=${who} onChange=${(e) => setWho(e.target.value)} aria-label="Filter by player">
+        <select class=${'text small-select' + (who !== 'all' ? ' active' : '')} value=${who} onChange=${(e) => setWho(e.target.value)} aria-label="Filter by player">
           <option value="all">Everyone</option>
           ${people.map((pid) => html`<option value=${pid}>${pid === me.id ? 'Me' : playersById[pid].name}</option>`)}
         </select>
