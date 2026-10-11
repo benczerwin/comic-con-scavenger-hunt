@@ -451,7 +451,7 @@ function Home({ me, playersById }) {
         </div>`}
         <div class="game-list">
           ${shown.map((g) => html`<${GameRow} key=${g.code} g=${g} playersById=${playersById} href=${`#/g/${g.code}`}
-            onDelete=${() => confirmDelete(g.code)} onEnd=${() => endGameEarly(g)} />`)}
+            onDelete=${() => confirmDelete(g.code)} onEnd=${() => endGameEarly(g)} onRecap=${() => go(`/g/${g.code}/recap`)} />`)}
         </div>
         ${sorted.length > 0 && !shown.length && html`<p class="muted center">No games match.</p>`}
       </section>
@@ -737,8 +737,8 @@ const gameResult = (g, playersById) => {
     : g.winner === 'ended' ? '🏁 Ended' : isDone(g) ? "⏱ Time's up" : 'In progress';
 };
 
-/** One game in a list. Pass href to make it a link, onClick/selected for picking, onDelete for a trash button. */
-function GameRow({ g, playersById, href, onClick, selected, onDelete, onEnd }) {
+/** One game in a list. Pass href to make it a link, onClick/selected for picking. onDelete adds swipe-left Delete; onEnd/onRecap the swipe-right action. */
+function GameRow({ g, playersById, href, onClick, selected, onDelete, onEnd, onRecap }) {
   const body = html`
     ${selected !== undefined && html`<span class="check-box">${selected ? '✓' : ''}</span>`}
     <span class="grow">
@@ -748,16 +748,17 @@ function GameRow({ g, playersById, href, onClick, selected, onDelete, onEnd }) {
       <small>${new Date(g.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · ${gameResult(g, playersById)}</small>
     </span>
     <span class="stack">${g.players.slice(0, 4).map((pid) => html`<${Emblem} id=${playersById[pid]?.emblem} size=${28} />`)}</span>`;
-  const canEnd = !!onEnd && !isDone(g);
-  const swipe = useSwipeReveal(!!onDelete, canEnd);
+  const done = isDone(g);
+  // Right swipe: End game on a live game, Game recap on a finished one.
+  const rightAction = !done ? onEnd && ['🏁', 'End game', onEnd] : onRecap && ['🖼️', 'Recap', onRecap];
+  const swipe = useSwipeReveal(!!onDelete, !!rightAction);
   const card = html`<div class=${`game-card mode-${g.mode}${g.coop ? ' coop' : ''}${selected ? ' sel' : ''}${isDone(g) ? ' done' : ''}`}
       ref=${swipe.ref} onClickCapture=${swipe.guard}>
     ${href ? html`<a class="game-main" href=${href}>${body}</a>` : html`<button class="game-main" onClick=${onClick}>${body}</button>`}
-    ${onDelete && html`<button class="icon-btn" aria-label=${`Delete game ${g.code}`} onClick=${onDelete}>${TRASH_SVG}</button>`}
   </div>`;
   if (!onDelete) return card;
   return html`<div class="swipe-row">
-    ${canEnd && html`<button class="swipe-end" tabindex="-1" onClick=${async () => { swipe.close(); await onEnd(); }}>🏁<span>End game</span></button>`}
+    ${rightAction && html`<button class=${'swipe-end' + (done ? ' recap' : '')} tabindex="-1" onClick=${async () => { swipe.close(); await rightAction[2](); }}>${rightAction[0]}<span>${rightAction[1]}</span></button>`}
     <button class="swipe-delete" tabindex="-1" onClick=${async () => { swipe.close(); await onDelete(); }}>${TRASH_SVG}<span>Delete</span></button>
     ${card}
   </div>`;
@@ -1576,7 +1577,7 @@ function RecapModal({ recap, code, playersById, onFeature, onClose, title = 'Gam
 
 // ───────────────────────── game screens ─────────────────────────
 
-function GameScreen({ code, me, playersById }) {
+function GameScreen({ code, me, playersById, autoRecap }) {
   const game = useWatch((cb) => store.watchDoc('games', code, cb), [code]);
   const thumbList = useWatch((cb) => store.watchWhere('thumbs', 'gameId', '==', code, cb), [code]);
   const thumbs = useMemo(() => Object.fromEntries((thumbList || []).map((t) => [t.id, t])), [thumbList]);
@@ -1611,6 +1612,14 @@ function GameScreen({ code, me, playersById }) {
     addEventListener('nycc:recap', makeRecap);
     return () => removeEventListener('nycc:recap', makeRecap);
   });
+  // #/g/CODE/recap (swipe on a finished game in the list) opens straight into the recap once photos are in.
+  const autoDone = useRef(false);
+  useEffect(() => {
+    if (!autoRecap || autoDone.current || !game || thumbList === undefined) return;
+    autoDone.current = true;
+    history.replaceState(null, '', `#/g/${code}`);
+    makeRecap();
+  }, [autoRecap, game, thumbList]);
 
   if (game === undefined) return html`<main class="screen"><p class="muted center">Loading game ${code}…</p></main>`;
   if (game === null) return html`
@@ -2426,7 +2435,7 @@ function App() {
   else if (route[0] === 'stats') body = html`<${StatsScreen} me=${me} players=${players} playersById=${playersById} focus=${route[1]} key=${route[1] || 'all'} />`;
   else if (route[0] === 'items') body = html`<${ItemsScreen} bank=${bank} />`;
   else if (route[0] === 'new') body = html`<${NewGame} mode=${['versus', 'endless'].includes(route[1]) ? route[1] : 'bingo'} me=${me} players=${players} key=${route[1]} />`;
-  else if (route[0] === 'g' && route[1]) body = html`<${GameScreen} code=${route[1].toUpperCase()} me=${me} playersById=${playersById} key=${route[1]} />`;
+  else if (route[0] === 'g' && route[1]) body = html`<${GameScreen} code=${route[1].toUpperCase()} me=${me} playersById=${playersById} key=${route[1]} autoRecap=${route[2] === 'recap'} />`;
   else body = html`<${Home} me=${me} playersById=${playersById} />`;
 
   return html`${body}<${SyncIndicator} /><${Toasts} />`;
