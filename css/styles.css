@@ -589,6 +589,16 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s3); }
 .panel .panel-head h2 { margin: 0; }
 .game-filters { margin-bottom: var(--s3); }
+.status-filter { margin-bottom: var(--s2); }
+.status-filter .pill small { margin-left: 4px; font-weight: 700; opacity: 0.6; }
+.status-tag { font-weight: 900; font-size: 0.7rem; letter-spacing: 0.5px; text-transform: uppercase; padding: 2px 8px;
+  border-radius: 999px; border: 2px solid var(--ink); line-height: 1.2; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+.status-tag.live { background: #fff; }
+.status-tag.live i { width: 7px; height: 7px; border-radius: 50%; background: #2fb344; animation: blink 1.6s ease-in-out infinite; }
+.status-tag.done { background: var(--ink); color: #fff; }
+@keyframes blink { 50% { opacity: 0.3; } }
+.game-card.done { background: #efe9dc; }
+.game-card.done .stack { opacity: 0.6; }
 .game-filters .small-select { flex: 1; min-width: 0; padding: var(--s2) 36px var(--s2) var(--s3); font-size: 0.95rem; }
 .how-list { padding-left: 18px; margin: 0; }
 .how-list li { margin-bottom: var(--s2); line-height: 1.4; }

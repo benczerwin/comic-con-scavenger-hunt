@@ -252,7 +252,7 @@ export async function renderRecap({ game, boards = [], thumbs, playersById, feat
   ctx.restore();
   ctx.lineWidth = 6; ctx.strokeStyle = INK; roundRect(ctx, PAD, y, boardW, H_WIN - 30, 22); ctx.stroke();
   const winner = winnerId && winnerId !== 'draw' ? playersById[winnerId] : null;
-  const headline = winnerId === 'team' ? 'TEAM BLACKOUT!' : winnerId === 'draw' ? "IT'S A TIE!" : winner ? `${firstName(winner).toUpperCase()} WINS!` : 'THE HUNT GOES ON…';
+  const headline = winnerId === 'ended' ? 'GAME OVER' : winnerId === 'team' ? 'TEAM BLACKOUT!' : winnerId === 'draw' ? "IT'S A TIE!" : winner ? `${firstName(winner).toUpperCase()} WINS!` : 'THE HUNT GOES ON…';
   if (winner) {
     const em = await getEmblem(winnerId);
     if (em) ctx.drawImage(em, PAD + 30, by - 65, 130, 130);

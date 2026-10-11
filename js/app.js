@@ -169,6 +169,38 @@ function versusBackups(game) {
   return G.generateCard({ size: game.size, difficulty: game.difficulty, exclude: game.items.map((i) => i.text), pool: poolFor(game), backups: backupCount(game) }).backups;
 }
 
+/** End a game early. Co-op just stops; otherwise whoever's ahead wins (points in Endless and timed Solo, else most found). */
+async function endGameEarly(game) {
+  if (!confirm(game.coop ? 'End the game now?' : 'End the game now? Whoever is ahead wins.')) return;
+  let bingoScores = null;
+  if (game.mode === 'bingo') {
+    const boards = await store.getWhere('boards', 'gameId', '==', game.code);
+    bingoScores = Object.fromEntries(boards.map((b) => {
+      const s = G.scoreBoard(b);
+      return [b.playerId, game.winRule === 'most' ? s.points : s.found];
+    }));
+  }
+  const res = await store.transact('games', game.code, (g) => {
+    if (!g || g.winner) return undefined;
+    if (g.coop) g.winner = 'ended';
+    else {
+      let sc = bingoScores;
+      if (g.mode === 'endless') sc = Object.fromEntries(Object.entries(G.endlessScores(g)).map(([k, v]) => [k, v.points]));
+      else if (!sc) {
+        sc = Object.fromEntries(g.players.map((pid) => [pid, 0]));
+        for (const c of Object.values(g.claims || {})) if (c?.by && c.by in sc) sc[c.by]++;
+      }
+      const best = Math.max(0, ...Object.values(sc));
+      const leaders = Object.keys(sc).filter((k) => sc[k] === best);
+      g.winner = leaders.length === 1 ? leaders[0] : 'draw';
+    }
+    g.endedEarly = true;
+    g.wonAt = Date.now();
+    return g;
+  });
+  if (res && !res.ok) toast("Couldn't end the game. Try again.", 'error');
+}
+
 async function createGame(settings, createdBy) {
   const code = await uniqueCode();
   const base = {
@@ -354,10 +386,12 @@ function Home({ me, playersById }) {
   const sorted = (games || []).slice().sort((a, b) => b.createdAt - a.createdAt);
   const [day, setDay] = useState('all');
   const [who, setWho] = useState('all');
+  const [status, setStatus] = useState('all');
   const dayKey = (t) => new Date(t).toDateString();
   const days = [...new Set(sorted.map((g) => dayKey(g.createdAt)))];
   const people = [...new Set(sorted.flatMap((g) => g.players))].filter((pid) => playersById[pid]);
-  const shown = sorted.filter((g) => (day === 'all' || dayKey(g.createdAt) === day) && (who === 'all' || g.players.includes(who)));
+  const shown = sorted.filter((g) => (day === 'all' || dayKey(g.createdAt) === day) && (who === 'all' || g.players.includes(who))
+    && (status === 'all' || (status === 'done') === isDone(g)));
 
 
   return html`
@@ -403,6 +437,11 @@ function Home({ me, playersById }) {
         </div>
         ${games === undefined && html`<p class="muted">Loading…</p>`}
         ${games && !sorted.length && html`<p class="muted">No games yet. Start one above!</p>`}
+        ${sorted.length > 1 && html`<div class="filter-row status-filter">
+          ${[['all', 'All games'], ['live', 'In progress'], ['done', 'Done']].map(([k, l]) => html`
+            <button class="pill ${status === k ? 'sel' : ''}" onClick=${() => setStatus(k)}>${l}
+              <small>${k === 'all' ? sorted.length : sorted.filter((g) => (k === 'done') === isDone(g)).length}</small></button>`)}
+        </div>`}
         ${sorted.length > 1 && html`<div class="row game-filters">
           <select class="text small-select" value=${day} onChange=${(e) => setDay(e.target.value)} aria-label="Filter by date">
             <option value="all">All dates</option>
@@ -693,9 +732,12 @@ const TRASH_SVG = html`<svg viewBox="0 0 24 24" width="20" height="20" fill="non
 
 const gameDetail = (g) => g.mode === 'endless' ? `${findCount(g)} find${findCount(g) === 1 ? '' : 's'}`
   : `${g.size}×${g.size}${g.place ? ' · Empty board' : ''} · ${g.mode === 'bingo' ? G.WIN_RULES[g.winRule]?.label : g.coop ? 'Team blackout' : `${g.connect} in a row`}`;
+// Over once someone won, the game was ended, or a timed game ran out (its winner is worked out on screen).
+const isDone = (g) => !!g.winner || (!!g.endsAt && Date.now() >= g.endsAt);
 const gameResult = (g, playersById) => {
   const w = g.winner && playersById[g.winner];
-  return w ? `🏆 ${w.name}` : g.winner === 'draw' ? '🤝 Draw' : g.winner === 'team' ? '🎉 Blacked out' : 'In progress';
+  return w ? `🏆 ${w.name}` : g.winner === 'draw' ? '🤝 Draw' : g.winner === 'team' ? '🎉 Blacked out'
+    : g.winner === 'ended' ? '🏁 Ended' : isDone(g) ? "⏱ Time's up" : 'In progress';
 };
 
 /** One game in a list. Pass href to make it a link, onClick/selected for picking, onDelete for a trash button. */
@@ -703,12 +745,13 @@ function GameRow({ g, playersById, href, onClick, selected, onDelete }) {
   const body = html`
     ${selected !== undefined && html`<span class="check-box">${selected ? '✓' : ''}</span>`}
     <span class="grow">
-      <span class="gr-top"><b>${g.code}</b><span class="mode-label ${g.mode}">${modeTag(g)}</span></span>
+      <span class="gr-top"><b>${g.code}</b><span class="mode-label ${g.mode}">${modeTag(g)}</span>
+        ${isDone(g) ? html`<span class="status-tag done">✓ Done</span>` : html`<span class="status-tag live"><i></i>Live</span>`}</span>
       <small>${gameDetail(g)}</small>
       <small>${new Date(g.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} · ${gameResult(g, playersById)}</small>
     </span>
     <span class="stack">${g.players.slice(0, 4).map((pid) => html`<${Emblem} id=${playersById[pid]?.emblem} size=${28} />`)}</span>`;
-  return html`<div class=${`game-card mode-${g.mode}${g.coop ? ' coop' : ''}${selected ? ' sel' : ''}`}>
+  return html`<div class=${`game-card mode-${g.mode}${g.coop ? ' coop' : ''}${selected ? ' sel' : ''}${isDone(g) ? ' done' : ''}`}>
     ${href ? html`<a class="game-main" href=${href}>${body}</a>` : html`<button class="game-main" onClick=${onClick}>${body}</button>`}
     ${onDelete && html`<button class="icon-btn" aria-label=${`Delete game ${g.code}`} onClick=${onDelete}>${TRASH_SVG}</button>`}
   </div>`;
@@ -1570,6 +1613,7 @@ function GameScreen({ code, me, playersById }) {
         <${Screen} key=${isPlayer ? 'player' : 'watcher'} game=${game} me=${me} playersById=${playersById} thumbs=${thumbs} isPlayer=${isPlayer} onRematch=${rematch} />
       <//>
       <div class="game-footer">
+        ${isPlayer && !game.winner && !(game.endsAt && Date.now() >= game.endsAt) && html`<button class="btn small" onClick=${() => endGameEarly(game)}>🏁 End game</button>`}
         <button class="btn small" onClick=${makeRecap}>🖼️ Game recap</button>
         <button class="btn small danger" onClick=${async () => { if (await confirmDelete(code)) go('/'); }}>🗑️ Delete game</button>
       </div>
@@ -1594,7 +1638,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
   const [swapIdx, setSwapIdx] = useState(null);
   const [open, setOpen] = useState(null); // square index
 
-  const timeUp = !!game.endsAt && now >= game.endsAt;
+  const timeUp = (!!game.endsAt && now >= game.endsAt) || !!game.endedEarly;
   const ordered = useMemo(() => (boards || []).slice().sort((a, b) =>
     (a.playerId === me.id ? -1 : b.playerId === me.id ? 1 : a.createdAt - b.createdAt)), [boards, me.id]);
   const scores = useMemo(() => Object.fromEntries(ordered.map((b) => [b.playerId, G.scoreBoard(b)])), [ordered]);
@@ -1604,7 +1648,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
 
   // 'most' winner is computed once time is up; line/blackout winners are written to the game doc.
   let winnerId = game.winner;
-  if (game.winRule === 'most' && timeUp && ordered.length) {
+  if (game.winRule === 'most' && timeUp && !game.endedEarly && ordered.length) {
     const best = Math.max(...ordered.map((b) => scores[b.playerId].points));
     const leaders = ordered.filter((b) => scores[b.playerId].points === best);
     winnerId = leaders.length === 1 ? leaders[0].playerId : 'draw';
@@ -1699,7 +1743,7 @@ function BingoGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     </div>
     ${winnerId && html`<${WinBanner}
       text=${winnerId === 'draw' ? "IT'S A TIE!" : winnerId === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
-      sub=${game.winRule !== 'most' ? 'Keep hunting for bragging rights, or start a rematch.' : null}
+      sub=${game.endedEarly ? 'Game ended early.' : game.winRule !== 'most' ? 'Keep hunting for bragging rights, or start a rematch.' : null}
       onRematch=${onRematch} />`}
 
     <div class="scoreboard">
@@ -1882,8 +1926,8 @@ function VersusGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     ${celebrate && html`<${Confetti} />`}
     <div class="game-info"><span>${game.size}×${game.size} · ${coop ? 'Co-op: black out the board' : `${game.connect} in a row wins`}${diffTag(game)}${mixTag(game)}${tiersTag(game)}</span><${RerollPill} game=${game} n=${game.rerolls?.[me.id] || 0} show=${isPlayer} /></div>
     ${over && html`<${WinBanner}
-      text=${game.winner === 'team' ? 'TEAM BLACKOUT!' : game.winner === 'draw' ? "IT'S A DRAW!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
-      sub=${coop ? `All ${total} squares found together. 🎉` : !winLine && game.winner !== 'draw' ? 'Board full: most squares wins.' : null}
+      text=${game.winner === 'ended' ? 'GAME OVER' : game.winner === 'team' ? 'TEAM BLACKOUT!' : game.winner === 'draw' ? "IT'S A DRAW!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
+      sub=${game.endedEarly ? (coop ? 'Game ended early.' : 'Game ended early: most squares wins.') : coop ? `All ${total} squares found together. 🎉` : !winLine && game.winner !== 'draw' ? 'Board full: most squares wins.' : null}
       onRematch=${onRematch} />`}
 
     ${coop && html`<div class="team-progress">
@@ -2039,8 +2083,8 @@ function PlaceGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     ${celebrate && html`<${Confetti} />`}
     <div class="game-info"><span>${game.size}×${game.size} · Empty board · ${coop ? 'Co-op: fill the board' : `${game.connect} in a row wins`}${mixTag(game)}${tiersTag(game)}</span><${RerollPill} game=${game} n=${game.rerolls?.[me.id] || 0} show=${isPlayer} /></div>
     ${over && html`<${WinBanner}
-      text=${game.winner === 'team' ? 'TEAM BLACKOUT!' : game.winner === 'draw' ? "IT'S A DRAW!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
-      sub=${coop ? `All ${total} squares filled together. 🎉` : !winLine && game.winner !== 'draw' ? 'Board full: most squares wins.' : null}
+      text=${game.winner === 'ended' ? 'GAME OVER' : game.winner === 'team' ? 'TEAM BLACKOUT!' : game.winner === 'draw' ? "IT'S A DRAW!" : game.winner === me.id ? 'YOU WIN!' : `${firstName(winner).toUpperCase()} WINS!`}
+      sub=${game.endedEarly ? (coop ? 'Game ended early.' : 'Game ended early: most squares wins.') : coop ? `All ${total} squares filled together. 🎉` : !winLine && game.winner !== 'draw' ? 'Board full: most squares wins.' : null}
       onRematch=${onRematch} />`}
     ${coop && html`<div class="team-progress">
       <div class="bar"><span style=${`width:${(placed / total) * 100}%`}></span></div>
@@ -2190,18 +2234,6 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
     if (res && !res.ok && slotOf(G.endlessState(res.data || game), slot.id)?.pick) toast('No items match those settings. Try more categories.', 'error');
   };
 
-  const endGame = async () => {
-    if (!confirm('End the game? Most points wins.')) return;
-    await store.transact('games', game.code, (g) => {
-      if (!g || g.winner) return undefined;
-      const sc = G.endlessScores(g);
-      const best = Math.max(0, ...Object.values(sc).map((x) => x.points));
-      const leaders = Object.keys(sc).filter((k) => sc[k].points === best);
-      g.winner = leaders.length === 1 ? leaders[0] : 'draw';
-      g.wonAt = Date.now();
-      return g;
-    });
-  };
 
   const winner = game.winner && game.winner !== 'draw' ? playersById[game.winner] : null;
   const viewing = open !== null ? game.history[open] : null;
@@ -2272,7 +2304,6 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       </div>
     </section>`}
 
-    ${isPlayer && !over && html`<button class="btn small ghost end-game" onClick=${endGame}>🏁 End game</button>`}
     ${busy && html`<div class="busy"><div class="spinner"></div>Uploading…</div>`}
 
     ${snapSlot && html`<${SquareModal} item=${snapSlot.item} found=${false} canAct=${canSnap} actionLabel="Snap it"
