@@ -231,13 +231,16 @@ a { color: inherit; }
   font-weight: 800; line-height: 1.05;
 }
 .tile:active { filter: brightness(0.92); }
-.tile .icon { font-size: calc(min(680px, 100vw) / var(--n) * 0.32); line-height: 1; }
+.tile .icon { font-size: calc(min(680px, 100vw) / var(--n) * 0.26); line-height: 1; flex: none; }
+/* Icon sits at the same spot near the top of every square; the name starts right under it. */
+.tile:not(.done):not(.empty):not(.tier-free) { justify-content: flex-start; padding-top: calc(min(680px, 100vw) / var(--n) * 0.14); }
 /* Item pictures are flat line icons sized by the slot's font-size. */
 .icon > .ico, .hist-icon > .ico { width: 1em; height: 1em; vertical-align: middle; display: inline-block; }
 .tile .txt { font-size: calc(min(680px, 100vw) / var(--n) * 0.105); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .tile .stars { position: absolute; top: 2px; right: 4px; font-size: 0.55rem; color: rgba(0, 0, 0, 0.55); letter-spacing: -1px; }
 .board.s3 .tile .txt { font-size: 0.95rem; }
-.board.s3 .tile .icon { font-size: 3rem; }
+.board.s3 .tile .icon { font-size: 2.4rem; }
+.board.s3 .tile:not(.done):not(.empty):not(.tier-free) { padding-top: 18px; }
 .board.s3 .tile .stars { font-size: 0.8rem; }
 .board.s6 .tile .txt, .board.s7 .tile .txt { -webkit-line-clamp: 3; }
 .board.s7 .tile .stars { display: none; }
@@ -671,7 +674,8 @@ select.text { appearance: none; -webkit-appearance: none; background: #fff url("
   background: var(--tile, #fff); border: 3px solid var(--ink); border-radius: 12px; box-shadow: 3px 3px 0 var(--ink); cursor: pointer;
   background-image: radial-gradient(rgba(0, 0, 0, 0.12) 1px, transparent 1.2px); background-size: 6px 6px; overflow: hidden;
 }
-.hand-card .icon { font-size: 1.9rem; line-height: 1; }
+.hand-card { justify-content: flex-start; padding-top: 18px; }
+.hand-card .icon { font-size: 2.4rem; line-height: 1; flex: none; margin-bottom: 4px; }
 .hand-card .txt { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .hand-card .stars { position: absolute; top: 3px; right: 6px; font-size: 0.6rem; color: rgba(0, 0, 0, 0.55); }
 .hand-card:disabled { opacity: 0.45; }
