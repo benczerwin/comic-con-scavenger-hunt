@@ -2681,7 +2681,10 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
   const turns = st.turnMode === 'turns';
   const canSnap = isPlayer && !over && (!turns || st.turn === me.id);
   const name = (pid) => (pid === me.id ? 'You' : firstName(playersById[pid]));
-  const history = (game.history || []).map((h, i) => ({ ...h, i })).reverse();
+  const [histF, setHistF] = useState([]); // filter for "Everything so far"
+  const histKind = (h) => (G.isFind(h) ? (h.photo ? 'photo' : 'found') : h.rerolled ? 'rerolled' : h.expired ? 'expired' : h.blocked ? 'blocked' : 'skipped');
+  const allHistory = (game.history || []).map((h, i) => ({ ...h, i })).reverse();
+  const history = histF.length ? allHistory.filter((h) => histF.includes(histKind(h))) : allHistory;
   const pts = (it) => G.ENDLESS_POINTS[it.tier] || 1;
 
   // Runs fn(state, g) inside a transaction on the normalized slot state; fn returns false to abort.
@@ -2810,8 +2813,14 @@ function EndlessGame({ game, me, playersById, thumbs, isPlayer, onRematch }) {
       ${turns && isPlayer && st.turn !== me.id && html`<p class="muted center">Waiting for ${name(st.turn)} to snap one…</p>`}
     `}
 
-    ${history.length > 0 && html`<section class="panel">
-      <h2>Everything so far</h2>
+    ${allHistory.length > 0 && html`<section class="panel">
+      <div class="panel-head hist-head">
+        <h2>Everything so far</h2>
+        <${MultiSelect} label="Filter history" allLabel="Show all" noun="kinds" value=${histF} onChange=${setHistF}
+          options=${[{ value: 'photo', label: 'With photos' }, { value: 'found', label: 'Found, no photo' }, { value: 'rerolled', label: 'Rerolled' },
+            { value: 'expired', label: 'Swapped out' }, { value: 'blocked', label: 'Blocked' }]} />
+      </div>
+      ${!history.length && html`<p class="muted small">Nothing matches this filter.</p>`}
       <div class="endless-history">
         ${history.map((h) => {
           const found = G.isFind(h);

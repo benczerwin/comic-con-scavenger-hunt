@@ -699,6 +699,9 @@ button.badge { border: 0; font: inherit; font-weight: 800; font-size: 0.65rem; l
   border-radius: 999px; padding: 1px 7px; margin-left: auto; }
 .item-row .used.zero { background: none; border-color: #cfc6b2; color: var(--muted); }
 .sheet-actions { flex-wrap: wrap; }
+.hist-head { flex-direction: column; align-items: stretch; gap: var(--s2); }
+.hist-head h2 { margin: 0; }
+.hist-head .multi-btn { padding: var(--s2) 34px var(--s2) var(--s3); font-size: 0.95rem; }
 .preset-del { flex: none; width: 46px; align-self: stretch; display: grid; place-items: center; border: 3px solid var(--ink); border-radius: 12px; background: #fff;
   color: var(--ink); font-size: 1.15rem; padding: 0; }
 .preset-del:active { filter: brightness(0.9); }
