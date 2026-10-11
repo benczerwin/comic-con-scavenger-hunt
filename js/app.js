@@ -411,17 +411,14 @@ function Home({ me, playersById }) {
 
       <section class="modes">
         <a class="mode-card bingo" href="#/new/bingo">
-          <div class="burst">SOLO!</div>
           <h2>Solo Series</h2>
           <p>Everyone gets their own board. Snap photos, complete lines, win.</p>
         </a>
         <a class="mode-card versus" href="#/new/versus">
-          <div class="burst">X-OVER!</div>
           <h2>Crossover</h2>
           <p>Everyone on one shared board. Race to claim squares, or team up to fill it.</p>
         </a>
         <a class="mode-card endless" href="#/new/endless">
-          <div class="burst">∞!</div>
           <h2>Endless</h2>
           <p>One item at a time. Take turns, reroll if you're stuck, and pick what your friend hunts next.</p>
         </a>

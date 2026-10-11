@@ -129,22 +129,16 @@ a { color: inherit; }
 .mode-card {
   position: relative; overflow: hidden; text-decoration: none;
   border: 3px solid var(--ink); border-radius: var(--radius); box-shadow: var(--shadow);
-  padding: 54px 12px 14px; min-height: 180px;
+  padding: var(--s4) var(--s3);
   background-image: radial-gradient(rgba(0, 0, 0, 0.12) 1.5px, transparent 1.7px);
   background-size: 9px 9px;
 }
 .mode-card.bingo { background-color: var(--yellow); }
 .mode-card.versus { background-color: #7fb2ff; }
-.mode-card.endless { background-color: #8ce99a; grid-column: 1 / -1; min-height: 0; padding: var(--s4) 84px var(--s4) var(--s3); }
+.mode-card.endless { background-color: #8ce99a; grid-column: 1 / -1; }
 .mode-card h2 { font-family: var(--display); font-size: 1.8rem; margin: 0; letter-spacing: 1px; }
 .mode-card p { margin: 6px 0 0; font-size: 0.9rem; font-weight: 700; }
 .mode-card:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--ink); }
-.burst {
-  position: absolute; top: 8px; right: 8px; font-family: var(--display); font-size: 1.3rem;
-  background: var(--red); color: #fff; padding: 6px 10px; transform: rotate(8deg);
-  clip-path: polygon(50% 0, 61% 18%, 82% 8%, 80% 30%, 100% 36%, 84% 52%, 98% 70%, 76% 72%, 76% 96%, 58% 82%, 44% 100%, 36% 80%, 14% 92%, 18% 70%, 0 62%, 16% 48%, 2% 30%, 22% 28%, 18% 6%, 40% 16%);
-  padding: 16px 18px;
-}
 .banner {
   border: 3px solid var(--ink); border-radius: 12px; padding: var(--s3); margin: 0 0 var(--s4);
   background: #fff; font-weight: 700; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -358,10 +352,9 @@ a { color: inherit; }
 
 @media (max-width: 480px) {
   .modes { gap: var(--s3); }
-  .mode-card { min-height: 150px; padding: 46px 10px 12px; }
+  .mode-card { padding: var(--s3); }
   .mode-card h2 { font-size: 1.45rem; }
   .mode-card p { font-size: 0.78rem; }
-  .burst { font-size: 1rem; padding: 12px 14px; }
 }
 @media (max-width: 360px) {
   .logo { font-size: 2.1rem; }
