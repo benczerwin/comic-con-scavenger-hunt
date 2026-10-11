@@ -640,7 +640,7 @@ function HowToPlay() {
     <li><b>Solo Series:</b> everyone gets their own board. Tap a square, take a photo, and it's marked. Pick a win rule when you start.</li>
     <li><b>Crossover:</b> everyone shares one board. Snap a square first to claim it with your emblem and get N in a row to win. Or pick <b>Co-op</b> and black out the board together.</li>
     <li><b>Empty board</b> (Crossover option): the board starts blank and everyone gets a hand of items (9 by default). Snap one, place it on any empty square, and you get a whole new hand. Pick your spots to block or build a line.</li>
-    <li><b>Endless:</b> 1–5 items are up at a time. Snap one to score (★ = 1 pt, ★★ = 2, ★★★ = 3), then pick the difficulty and type of the next item. An item that sits while 3 others get found swaps itself out (the little bars on each card count down).</li>
+    <li><b>Endless:</b> 1–5 items are up at a time. Snap one to score (★ = 1 pt, ★★ = 2, ★★★ = 3), then pick the difficulty and type of the next item. An item that sits while 2 others get found swaps itself out (the little bars on each card count down).</li>
     <li><b>Backups:</b> in Solo Series and Crossover you get 1–3 backup items. Tap a backup, then tap an unmarked square to swap it in.</li>
     <li><b>${ic('dice')} Reroll:</b> swap an item you haven't found for a random one with the same stars. Rerolls are counted in the stats.</li>
     <li><b>${ic('ban')} Block:</b> never want to see an item again? Block it. It's swapped out and turned off in Edit hunt items.</li>
